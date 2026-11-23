@@ -20,8 +20,12 @@ struct PdhState {
   PDH_HQUERY query = nullptr;
   PDH_HCOUNTER cpu_total = nullptr;
   PDH_HCOUNTER cpu_core = nullptr;      // wildcard \Processor(*)\% Processor Time
+  PDH_HCOUNTER cpu_kernel = nullptr;    // \Processor(_Total)\% Privileged Time
   PDH_HCOUNTER mem_commit = nullptr;    // % Committed Bytes In Use
   PDH_HCOUNTER disk_bytes = nullptr;    // \PhysicalDisk(_Total)\Disk Bytes/sec
+  PDH_HCOUNTER disk_read = nullptr;     // \PhysicalDisk(_Total)\Disk Read Bytes/sec
+  PDH_HCOUNTER disk_write = nullptr;    // \PhysicalDisk(_Total)\Disk Write Bytes/sec
+  PDH_HCOUNTER paging_pct = nullptr;    // \Paging File(_Total)\% Usage
   PDH_HCOUNTER net_send = nullptr;      // wildcard \Network Interface(*)\Bytes Sent/sec
   PDH_HCOUNTER net_recv = nullptr;      // wildcard \Network Interface(*)\Bytes Received/sec
   bool ok = false;
@@ -124,10 +128,18 @@ bool PerfCollector::init_pdh() {
                             0, &s->cpu_total) == ERROR_SUCCESS) any = true;
   if (PdhAddEnglishCounterW(s->query, L"\\Processor(*)\\% Processor Time",
                             0, &s->cpu_core) == ERROR_SUCCESS) any = true;
+  if (PdhAddEnglishCounterW(s->query, L"\\Processor(_Total)\\% Privileged Time",
+                            0, &s->cpu_kernel) == ERROR_SUCCESS) any = true;
   if (PdhAddEnglishCounterW(s->query, L"\\Memory\\% Committed Bytes In Use",
                             0, &s->mem_commit) == ERROR_SUCCESS) any = true;
   if (PdhAddEnglishCounterW(s->query, L"\\PhysicalDisk(_Total)\\Disk Bytes/sec",
                             0, &s->disk_bytes) == ERROR_SUCCESS) any = true;
+  if (PdhAddEnglishCounterW(s->query, L"\\PhysicalDisk(_Total)\\Disk Read Bytes/sec",
+                            0, &s->disk_read) == ERROR_SUCCESS) any = true;
+  if (PdhAddEnglishCounterW(s->query, L"\\PhysicalDisk(_Total)\\Disk Write Bytes/sec",
+                            0, &s->disk_write) == ERROR_SUCCESS) any = true;
+  if (PdhAddEnglishCounterW(s->query, L"\\Paging File(_Total)\\% Usage",
+                            0, &s->paging_pct) == ERROR_SUCCESS) any = true;
   if (PdhAddEnglishCounterW(s->query, L"\\Network Interface(*)\\Bytes Sent/sec",
                             0, &s->net_send) == ERROR_SUCCESS) any = true;
   if (PdhAddEnglishCounterW(s->query, L"\\Network Interface(*)\\Bytes Received/sec",
@@ -176,12 +188,14 @@ void PerfCollector::thread_main() {
 void PerfCollector::sample(PerfSnapshot& out) {
   out.taken_ms = GetTickCount64();
 
-  // --- CPU + disk + net (PDH) ---
+  // --- CPU + disk + net + paging (PDH) ---
   auto* s = static_cast<PdhState*>(pdh_state_);
+  double paging_pct = 0.0;
   if (s && s->ok) {
     PdhCollectQueryData(s->query);
 
     if (s->cpu_total) fmt_double(s->cpu_total, out.cpu.total_percent);
+    if (s->cpu_kernel) fmt_double(s->cpu_kernel, out.cpu.kernel_percent);
     out.cpu.per_core = per_instance(s->cpu_core);
 
     if (s->disk_bytes) {
@@ -189,8 +203,19 @@ void PerfCollector::sample(PerfSnapshot& out) {
       if (fmt_double(s->disk_bytes, bps))
         out.disk.bytes_per_sec = static_cast<uint64_t>(bps);  // combined r+w
     }
+    if (s->disk_read) {
+      double v = 0.0;
+      if (fmt_double(s->disk_read, v))
+        out.disk.read_bytes_s = static_cast<uint64_t>(v);
+    }
+    if (s->disk_write) {
+      double v = 0.0;
+      if (fmt_double(s->disk_write, v))
+        out.disk.write_bytes_s = static_cast<uint64_t>(v);
+    }
     if (s->net_send) out.net.bytes_sent_s = static_cast<uint64_t>(sum_wildcard(s->net_send));
     if (s->net_recv) out.net.bytes_recv_s = static_cast<uint64_t>(sum_wildcard(s->net_recv));
+    if (s->paging_pct) fmt_double(s->paging_pct, paging_pct);
   }
 
   // --- Memory (sysinfo, no PDH) ---
@@ -202,9 +227,16 @@ void PerfCollector::sample(PerfSnapshot& out) {
     out.memory.commit_limit = ms.ullTotalPageFile;
     out.memory.committed_bytes =
         out.memory.commit_limit - ms.ullAvailPageFile;
+    // Pagefile size = commit limit - physical RAM; usage from PDH "% Usage".
+    out.memory.swap_total_bytes =
+        ms.ullTotalPageFile > ms.ullTotalPhys
+            ? ms.ullTotalPageFile - ms.ullTotalPhys
+            : 0;
+    if (paging_pct < 0.0) paging_pct = 0.0;
+    if (paging_pct > 100.0) paging_pct = 100.0;
+    out.memory.swap_used_bytes = static_cast<uint64_t>(
+        paging_pct / 100.0 * static_cast<double>(out.memory.swap_total_bytes));
   }
-
-  // --- Disk I/O via IP Helper fallback is skipped; PDH covers it. ---
 }
 
 }  // namespace collectors

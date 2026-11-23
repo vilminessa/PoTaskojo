@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <imgui_impl_dx11.h>
 #include <imgui_impl_win32.h>
+#include <implot.h>
 
 #include "core/log.h"
 #include "core/paths.h"
@@ -140,6 +141,7 @@ bool App::create_window(HINSTANCE instance, int cmd_show) {  WNDCLASSEXW wc{};
 bool App::init_imgui() {
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
+  ImPlot::CreateContext();  // required before any BeginPlot()
   ImGuiIO& io = ImGui::GetIO();
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   io.ConfigWindowsMoveFromTitleBarOnly = true;
@@ -207,6 +209,7 @@ void App::shutdown_imgui() {
   if (!imgui_ready_) return;
   ImGui_ImplDX11_Shutdown();
   ImGui_ImplWin32_Shutdown();
+  ImPlot::DestroyContext();   // must precede ImGui::DestroyContext
   ImGui::DestroyContext();
   imgui_ready_ = false;
 }

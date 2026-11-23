@@ -23,6 +23,15 @@ add_library(imgui STATIC
 target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
 target_compile_definitions(imgui PUBLIC UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 
+# ---- ImPlot (charts: axes, legends, hover tooltips; MIT, vendored) ----
+set(IMPLOT_DIR ${CMAKE_SOURCE_DIR}/external/implot)
+add_library(implot STATIC
+  ${IMPLOT_DIR}/implot.cpp
+  ${IMPLOT_DIR}/implot_items.cpp
+)
+target_include_directories(implot PUBLIC ${IMPLOT_DIR})
+target_link_libraries(implot PUBLIC imgui)
+
 # ---- App ----
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.cpp)
 add_executable(potaskojo WIN32 ${APP_SOURCES})
@@ -30,6 +39,7 @@ target_include_directories(potaskojo PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(potaskojo PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
 target_link_libraries(potaskojo PRIVATE
   imgui
+  implot
   d3d11 dxgi d2d1 dwrite dwmapi
   pdh iphlpapi advapi32 shell32 ole32 comctl32 version
   ws2_32 bcrypt crypt32 wintrust

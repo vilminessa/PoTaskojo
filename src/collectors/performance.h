@@ -14,6 +14,7 @@ namespace collectors {
 
 struct CpuSample {
   double total_percent = 0.0;   // 0..100 across all cores
+  double kernel_percent = 0.0;  // % Privileged Time (kernel + DPC/ISR)
   std::vector<double> per_core; // 0..100 each
 };
 
@@ -22,10 +23,14 @@ struct MemorySample {
   uint64_t used_bytes = 0;
   uint64_t committed_bytes = 0;
   uint64_t commit_limit = 0;
+  uint64_t swap_used_bytes = 0;   // pagefile usage
+  uint64_t swap_total_bytes = 0;  // pagefile size
 };
 
 struct DiskSample {
   uint64_t bytes_per_sec = 0;   // physical disk total (read+write)
+  uint64_t read_bytes_s = 0;    // read rate
+  uint64_t write_bytes_s = 0;   // write rate
 };
 
 struct NetworkSample {
