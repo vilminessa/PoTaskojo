@@ -1,0 +1,143 @@
+# Релиз: сборка exe -> загрузка в релиз -> SLSA-подпись -> проверка аттестации.
+# Триггеры: workflow_dispatch (пробный прогон) - выполняется verify+build;
+#           на тег v* идет весь конвейер (publish, SLSA, attestation).
+# Структура и закрепление actions повторяют vilminessa/Omnistash release.yml,
+# шаги адаптированы с Python/PyInstaller на C++/CMake/MSVC.
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Проверка перед сборкой
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure (warnings as errors)
+        run: cmake -B build -A x64 -DPOTASKOJO_WERROR=ON
+      - name: Build Release
+        run: cmake --build build --config Release --parallel
+      # Как version.py в референсе: тег должен совпадать с VERSION.
+      - name: Сверка VERSION с тегом
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          ver=$(tr -d '[:space:]' < VERSION)
+          echo "VERSION=$ver tag=$GITHUB_REF_NAME"
+          test "$ver" = "${GITHUB_REF_NAME#v}"
+
+  build:
+    name: Сборка potaskojo.exe
+    needs: verify
+    runs-on: windows-latest
+    outputs:
+      digests: ${{ steps.hash.outputs.digests }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure
+        run: cmake -B build -A x64
+      - name: Build Release
+        run: cmake --build build --config Release --parallel
+      # Наш exe ~1.1 МБ (у референса PyInstaller-onefile >20 МБ) - проверяем,
+      # что артефакт не пустой и не раздулся.
+      - name: Проверка размера
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter potaskojo.exe | Select-Object -First 1
+          if (-not $exe) { throw "potaskojo.exe not found" }
+          $s = $exe.Length
+          Write-Host "$($exe.FullName) -> $s bytes"
+          if ($s -lt 500000) { throw "suspiciously small: $s bytes" }
+          if ($s -gt 20000000) { throw "suspiciously large: $s bytes" }
+      # sha256sum-строка, закодированная в base64 - формат ожиданий SLSA.
+      - name: Хэш (sha256 -> base64 для SLSA)
+        id: hash
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path build -Recurse -Filter potaskojo.exe | Select-Object -First 1
+          $hash = (Get-FileHash -Path $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          $payload = "$hash  potaskojo.exe`n"
+          $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($payload))
+          "digests=$b64" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "digests=$b64"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: potaskojo-exe
+          path: build/**/potaskojo.exe
+          if-no-files-found: error
+          retention-days: 5
+
+  publish:
+    name: Загрузка exe в релиз
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: potaskojo-exe
+      - name: Создать/обновить релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          f=$(find . -name potaskojo.exe -type f | head -1)
+          test -n "$f" || { echo "potaskojo.exe not in artifact"; exit 1; }
+          notes="Автоматическая сборка (CI). SLSA-доказательство и аттестация загружаются отдельными ассетами."
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$f" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$f" --repo "$GITHUB_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" \
+              --notes "$notes"
+          fi
+
+  generator-generic-ossf-slsa3-publish:
+    name: SLSA-подпись
+    needs: [build, publish]
+    # Пробный прогон (dispatch) не публикует - генератор работает, но без
+    # загрузки ассетов; на теге генератор штампует provenance на ассеты.
+    if: always() && needs.build.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    permissions:
+      id-token: write
+      contents: write
+      actions: read
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: "${{ needs.build.outputs.digests }}"
+      # на теге - в релиз, на dispatch - только артефакты (пробный прогон)
+      upload-assets: ${{ startsWith(github.ref, 'refs/tags/') }}
+
+  verify-attestation:
+    name: Проверка аттестации
+    needs: generator-generic-ossf-slsa3-publish
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Скачать exe и аттестацию из релиза
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            -p potaskojo.exe -p potaskojo.exe.intoto.jsonl --clobber
+      - name: gh attestation verify (bundle из релиза)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # predicate-type и signer-repo совпадают с референсом: provenance v0.2,
+        # подписант - reusable workflow SLSA-генератора.
+        run: |
+          gh attestation verify potaskojo.exe \
+            --bundle potaskojo.exe.intoto.jsonl \
+            --repo "$GITHUB_REPOSITORY" \
+            --predicate-type https://slsa.dev/provenance/v0.2 \
+            --signer-repo slsa-framework/slsa-github-generator

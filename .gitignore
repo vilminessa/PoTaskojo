@@ -1,0 +1,27 @@
+# Build output
+build/
+out/
+cmake-build-*/
+
+# IDE / editor
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+CMakeSettings.json
+
+# ImGui runtime layout (user state, regenerated on run)
+imgui.ini
+
+# Logs and dumps (runtime data)
+*.log
+*.dmp
+
+# Python caches (RE helper scripts)
+__pycache__/
+*.pyc
+
+# OS
+Thumbs.db
+Desktop.ini
