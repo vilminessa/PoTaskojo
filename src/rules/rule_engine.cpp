@@ -84,7 +84,7 @@ void RuleEngine::stop() {
 void RuleEngine::set_paused(bool p) {
   paused_ = p;
   paused_reason_ = p ? 2 : 0;
-  core::log::info(p ? "rules paused by user" : "rules resumed");
+  core::log::info(p ? "rules paused by user" : "rules re-enabled");
 }
 
 RuleEngine::Status RuleEngine::status() const {
@@ -121,9 +121,9 @@ void RuleEngine::on_process_snapshot(
   if (!safety_ok()) {
     if (!paused_.exchange(true)) {
       paused_reason_ = 1;
-      core::log::warn("All rules paused: more than " +
+      core::log::warn("Safety pause: " +
                       std::to_string(kMaxActionsPerMinute) +
-                      " processes were ended or suspended in a minute.");
+                      " end/suspend actions within a minute.");
       std::lock_guard lock(status_mutex_);
       status_.paused_reason = 1;
       status_.last_event = "safety breaker: rules paused";

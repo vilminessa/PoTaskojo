@@ -1,6 +1,6 @@
 #pragma once
 // Autorun registration: HKCU Run key + StartupApproved toggle (the standard
-// Windows mechanism behind "Start with Windows in the tray").
+// Windows mechanism for launching an app at user logon).
 
 namespace platform {
 

@@ -56,7 +56,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmd_line,
   // can be added to the shell later).
   platform::LowMemoryWatcher::instance().start([](bool critical) {
     core::log::warn(critical ? "LOW MEMORY: close some processes"
-                             : "memory pressure eased");
+                             : "memory pressure cleared");
   });
 
   platform::SingleInstance guard(L"Local\\PoTaskojo_Mutex");

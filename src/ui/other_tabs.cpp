@@ -114,11 +114,11 @@ void render_services_tab() {
           using collectors::service_action;
           if (r.state == SERVICE_STOPPED && ImGui::MenuItem("Start")) {
             auto res = service_action(r.name, L"start");
-            status_line() = res.ok ? "Service started" : res.message.c_str();
+            status_line() = res.ok ? "Started the service" : res.message.c_str();
           }
           if (r.state == SERVICE_RUNNING && ImGui::MenuItem("Stop")) {
             auto res = service_action(r.name, L"stop");
-            status_line() = res.ok ? "Service stopped" : res.message.c_str();
+            status_line() = res.ok ? "Stopped the service" : res.message.c_str();
           }
           if (r.state == SERVICE_RUNNING && ImGui::MenuItem("Pause")) {
             service_action(r.name, L"pause");
@@ -128,7 +128,7 @@ void render_services_tab() {
           }
           if (ImGui::MenuItem("Restart")) {
             auto res = service_action(r.name, L"restart");
-            status_line() = res.ok ? "Service restarted" : res.message.c_str();
+            status_line() = res.ok ? "Restarted the service" : res.message.c_str();
           }
           ImGui::EndPopup();
         }
@@ -192,8 +192,8 @@ void render_startup_tab() {
         if (ImGui::MenuItem("Enable")) { c.set_enabled(r, true); c.refresh_now(); }
         if (ImGui::MenuItem("Disable")) { c.set_enabled(r, false); c.refresh_now(); }
         if (ImGui::MenuItem("Delete")) {
-          if (c.remove(r)) status_line() = "Startup entry deleted";
-          else status_line() = "Could not delete startup entry";
+          if (c.remove(r)) status_line() = "Startup entry removed";
+          else status_line() = "Could not remove startup entry";
           c.refresh_now();
         }
         ImGui::EndPopup();

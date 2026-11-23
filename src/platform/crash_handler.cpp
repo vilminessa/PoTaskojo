@@ -80,7 +80,7 @@ bool write_minidump(const wchar_t* reason) {
   }
 
   char log[256];
-  snprintf(log, sizeof(log), "dump written: %ls (%ls)\n",
+  snprintf(log, sizeof(log), "minidump saved: %ls (%ls)\n",
            name.c_str(), reason ? reason : L"");
   append_crash_log(log);
   return true;

@@ -49,7 +49,7 @@ void LowMemoryWatcher::thread_main() {
     const bool was = critical_.exchange(crit);
     if (crit != was) {
       core::log::warn(crit ? "memory pressure: critically low"
-                           : "memory pressure has eased");
+                           : "memory pressure cleared");
       if (callback_) callback_(crit);
     }
 

@@ -12,10 +12,10 @@ WindowState& window_state() {
     w.height = settings::get_int(L"Window", L"Height", w.height);
     w.maximized = settings::get_bool(L"Window", L"Maximized", w.maximized);
     w.always_on_top = settings::get_bool(L"Window", L"AlwaysOnTop", w.always_on_top);
-    w.close_to_tray = settings::get_bool(L"Window", L"CloseToTray", w.close_to_tray);
-    w.minimize_to_tray = settings::get_bool(L"Window", L"MinimizeToTray", w.minimize_to_tray);
-    w.start_minimized = settings::get_bool(L"Startup", L"StartMinimized", w.start_minimized);
-    w.start_with_windows = settings::get_bool(L"Startup", L"StartWithWindows",
+    w.close_to_tray = settings::get_bool(L"Window", L"HideOnClose", w.close_to_tray);
+    w.minimize_to_tray = settings::get_bool(L"Window", L"HideOnMinimize", w.minimize_to_tray);
+    w.start_minimized = settings::get_bool(L"Startup", L"LaunchMinimized", w.start_minimized);
+    w.start_with_windows = settings::get_bool(L"Startup", L"AutoStartOnLogon",
                                               w.start_with_windows);
     w.default_tab = settings::get_int(L"Window", L"DefaultTab", w.default_tab);
     w.ui_scale = static_cast<float>(
@@ -34,10 +34,10 @@ void save_window_state() {
   settings::set_int(L"Window", L"Height", w.height);
   settings::set_bool(L"Window", L"Maximized", w.maximized);
   settings::set_bool(L"Window", L"AlwaysOnTop", w.always_on_top);
-  settings::set_bool(L"Window", L"CloseToTray", w.close_to_tray);
-  settings::set_bool(L"Window", L"MinimizeToTray", w.minimize_to_tray);
-  settings::set_bool(L"Startup", L"StartMinimized", w.start_minimized);
-  settings::set_bool(L"Startup", L"StartWithWindows", w.start_with_windows);
+  settings::set_bool(L"Window", L"HideOnClose", w.close_to_tray);
+  settings::set_bool(L"Window", L"HideOnMinimize", w.minimize_to_tray);
+  settings::set_bool(L"Startup", L"LaunchMinimized", w.start_minimized);
+  settings::set_bool(L"Startup", L"AutoStartOnLogon", w.start_with_windows);
   settings::set_int(L"Window", L"DefaultTab", w.default_tab);
   settings::set_int(L"Window", L"UIScalePct", static_cast<int>(w.ui_scale * 100.0f));
   settings::save();

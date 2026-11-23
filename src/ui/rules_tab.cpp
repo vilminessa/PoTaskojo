@@ -43,8 +43,8 @@ const char* start_name(rules::StartAction a) {
   using S = rules::StartAction;
   switch (a) {
     case S::None: return "Nothing";
-    case S::EndIt: return "End it whenever it starts";
-    case S::Suspend: return "Suspend on start";
+    case S::EndIt: return "Terminate on launch";
+    case S::Suspend: return "Suspend on launch";
   }
   return "?";
 }
@@ -95,7 +95,7 @@ void render_rules_tab() {
     ImGui::PopStyleColor();
     if (ImGui::SmallButton("Resume rules")) {
       RuleEngine::instance().set_paused(false);
-      g_status = "Rules resumed";
+      g_status = "Rules re-enabled";
     }
   } else {
     ImGui::TextDisabled("Rules active | applied %u | last: %s",
@@ -103,14 +103,14 @@ void render_rules_tab() {
     ImGui::SameLine();
     if (ImGui::SmallButton("Pause rules")) {
       RuleEngine::instance().set_paused(true);
-      g_status = "Rules paused. Programs got their own settings back.";
+      g_status = "Rules paused; affected programs reverted to their earlier settings.";
     }
   }
 
   if (newer) {
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
     ImGui::TextWrapped(
-        "These rules were saved by a newer PoTaskojo and can't be changed here.");
+        "These rules were written by a newer version and cannot be edited here.");
     ImGui::PopStyleColor();
   }
   if (!g_status.empty()) {
@@ -151,9 +151,9 @@ void render_rules_tab() {
   // --- Rule list ---
   const auto rules_list = RuleStore::instance().all();
   if (rules_list.empty()) {
-    ImGui::TextDisabled("No rules yet.");
+    ImGui::TextDisabled("No rules defined.");
     ImGui::TextDisabled(
-        "Add a rule to change how a program runs, or to watch it.");
+        "Add a rule to adjust how a program runs, or to monitor it.");
     return;
   }
 
@@ -178,7 +178,7 @@ void render_rules_tab() {
         r.enabled = en;
         RuleStore::instance().update(r.exe_name, r);
         RuleStore::instance().save();
-        g_status = en ? "Rule turned on" : "Rule turned off";
+        g_status = en ? "Rule enabled" : "Rule disabled";
       }
 
       ImGui::TableNextColumn();
@@ -226,8 +226,8 @@ void render_rules_tab() {
 
   ImGui::Spacing();
   ImGui::TextDisabled(
-      "Rules work while PoTaskojo runs. Start with Windows + tray so they "
-      "keep working after sign-in.");
+      "Rules apply only while PoTaskojo is running. Enable auto-start + tray "
+      "so they keep working after sign-in.");
 }
 
 }  // namespace ui

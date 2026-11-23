@@ -69,7 +69,7 @@ ActionResult execute(const ProcessAction& action) {
       if (!proc) { r.message = "Access denied"; return r; }
       if (TerminateProcess(proc, 0)) {
         r.ok = true;
-        r.message = "End task requested";
+        r.message = "Termination requested";
       } else {
         r.message = "Could not end process (protected or access denied)";
       }
@@ -93,9 +93,9 @@ ActionResult execute(const ProcessAction& action) {
       if (!proc) { r.message = "Access denied (run as administrator?)"; return r; }
       if (SetPriorityClass(proc, static_cast<DWORD>(action.priority_class))) {
         r.ok = true;
-        r.message = "Priority updated";
+        r.message = "Priority changed";
       } else {
-        r.message = "Could not update process priority";
+        r.message = "Failed to change process priority";
       }
       break;
     }
@@ -129,7 +129,7 @@ ActionResult execute(const ProcessAction& action) {
         GlobalUnlock(h);
         SetClipboardData(CF_UNICODETEXT, h);
         r.ok = true;
-        r.message = "Copied to clipboard";
+        r.message = "Copied the path to the clipboard";
       } else {
         r.message = "Out of memory";
       }

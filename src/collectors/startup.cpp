@@ -162,9 +162,9 @@ void StartupCollector::collect(StartupSnapshot& out) {
                   out.rows);
   collect_run_key(HKEY_LOCAL_MACHINE,
                   L"Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run",
-                  L"HKLM Run (32-bit)", out.rows);
-  collect_folder(FOLDERID_Startup, L"Startup folder (User)", out.rows);
-  collect_folder(FOLDERID_CommonStartup, L"Startup folder (Common)", out.rows);
+                  L"HKLM Run (32-bit view)", out.rows);
+  collect_folder(FOLDERID_Startup, L"User startup folder", out.rows);
+  collect_folder(FOLDERID_CommonStartup, L"Common startup folder", out.rows);
 
   out.enabled_count = static_cast<size_t>(
       std::count_if(out.rows.begin(), out.rows.end(),

@@ -43,19 +43,19 @@ void render_settings_dialog(bool* open) {
 
   ImGui::TextDisabled("Window");
   ImGui::Separator();
-  ImGui::Checkbox("Close to tray", &ws.close_to_tray);
-  ImGui::Checkbox("Minimize to tray", &ws.minimize_to_tray);
+  ImGui::Checkbox("Close hides to tray", &ws.close_to_tray);
+  ImGui::Checkbox("Minimize hides to tray", &ws.minimize_to_tray);
   ImGui::Checkbox("Always on top", &ws.always_on_top);
-  ImGui::Checkbox("Start minimized", &ws.start_minimized);
+  ImGui::Checkbox("Launch minimized", &ws.start_minimized);
 
   ImGui::Spacing();
-  ImGui::TextDisabled("Start with Windows");
+  ImGui::TextDisabled("Auto-start");
   ImGui::Separator();
   bool autorun = platform::autorun_is_enabled();
-  if (ImGui::Checkbox("Start PoTaskojo with Windows (in tray)", &autorun)) {
+  if (ImGui::Checkbox("Start PoTaskojo at logon (in tray)", &autorun)) {
     platform::autorun_set(autorun);
     ws.start_with_windows = autorun;
-    core::settings::set_bool(L"Startup", L"StartWithWindows", autorun);
+    core::settings::set_bool(L"Startup", L"AutoStartOnLogon", autorun);
   }
   ImGui::TextDisabled(
       "Rules and watchers keep working after you sign in.");
@@ -64,13 +64,13 @@ void render_settings_dialog(bool* open) {
   ImGui::TextDisabled("Appearance");
   ImGui::Separator();
   static bool light = false;
-  if (ImGui::Checkbox("Light theme", &light)) {
+  if (ImGui::Checkbox("Use light theme", &light)) {
     apply_theme(light);
     core::settings::set_bool(L"Theme", L"LightTheme", light);
   }
 
   ImGui::Spacing();
-  ImGui::TextDisabled("Task Manager replacement");
+  ImGui::TextDisabled("Task Manager integration");
   ImGui::Separator();
   {
     using namespace platform;
@@ -82,7 +82,7 @@ void render_settings_dialog(bool* open) {
       ifeo = ifeo_is_enabled();
     }
     ImGui::BeginDisabled(!is_user_admin());
-    if (ImGui::Checkbox("Replace Task Manager (IFEO)", &ifeo)) {
+    if (ImGui::Checkbox("Use PoTaskojo instead of Task Manager", &ifeo)) {
       ifeo_error.clear();
       ifeo_set(ifeo, &ifeo_error);
       ifeo = ifeo_is_enabled();  // re-read (may have failed)

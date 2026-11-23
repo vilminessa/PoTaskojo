@@ -54,6 +54,6 @@ const Layout& get() {
 std::filesystem::path settings_file() { return get().data_dir / L"settings.ini"; }
 std::filesystem::path themes_file() { return get().data_dir / L"themes.json"; }
 std::filesystem::path run_history_file() { return get().data_dir / L"runHistory.json"; }
-std::filesystem::path history_dir() { return get().data_dir / L"processHistory"; }
+std::filesystem::path history_dir() { return get().data_dir / L"history"; }
 
 }  // namespace core::paths

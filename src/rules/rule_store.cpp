@@ -236,18 +236,18 @@ bool RuleStore::has(const std::wstring& exe_name) const {
 bool RuleStore::add(const Rule& r, std::string* error) {
   std::lock_guard lock(mutex_);
   if (rules_.size() >= kMaxRules) {
-    if (error) *error = "The limit of 128 rules is reached.";
+    if (error) *error = "Rule limit reached (128).";
     return false;
   }
   const auto l = lower(r.exe_name);
   if (std::any_of(rules_.begin(), rules_.end(), [&](const Rule& x) {
         return lower(x.exe_name) == l;
       })) {
-    if (error) *error = "This program already has a rule.";
+    if (error) *error = "A rule already exists for that program.";
     return false;
   }
   if (r.watchdogs.size() > kMaxWatchdogsPerRule) {
-    if (error) *error = "A rule can have up to 4 watchdogs.";
+    if (error) *error = "A rule allows at most four watchdogs.";
     return false;
   }
   rules_.push_back(r);
@@ -262,11 +262,11 @@ bool RuleStore::update(const std::wstring& exe_name, const Rule& r,
     return lower(x.exe_name) == l;
   });
   if (it == rules_.end()) {
-    if (error) *error = "That rule is gone.";
+    if (error) *error = "No rule exists for that program.";
     return false;
   }
   if (r.watchdogs.size() > kMaxWatchdogsPerRule) {
-    if (error) *error = "A rule can have up to 4 watchdogs.";
+    if (error) *error = "A rule allows at most four watchdogs.";
     return false;
   }
   *it = r;
