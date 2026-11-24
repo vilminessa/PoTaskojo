@@ -21,6 +21,7 @@
 #include "ui/tabs.h"
 #include "ui/theme.h"
 #include "ui/widgets.h"
+#include "update/update_install.h"
 
 #pragma comment(lib, "dwmapi.lib")
 
@@ -602,6 +603,10 @@ int App::run(HINSTANCE instance, int cmd_show, bool open_settings,
   start_ticks_ = GetTickCount64();
   settings_open_ = open_settings;
 
+  // An executable left behind by the previous update can only be deleted now
+  // that no older process is holding it open.
+  update::install::cleanup_previous();
+
   if (!create_window(instance, cmd_show)) return 1;
   active_tab_ = core::window_state().default_tab;
   if (active_tab_ < 0 || active_tab_ >= static_cast<int>(ui::Tab::Count))
@@ -641,7 +646,6 @@ int App::run(HINSTANCE instance, int cmd_show, bool open_settings,
   DestroyWindow(hwnd_);
   UnregisterClassW(kWindowClass, instance);
   core::log::info("app exited");
-  core::log::shutdown();
   return static_cast<int>(msg.wParam);
 }
 

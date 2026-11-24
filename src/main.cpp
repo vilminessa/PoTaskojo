@@ -8,6 +8,7 @@
 #include "platform/ifeo.h"
 #include "platform/low_memory.h"
 #include "platform/single_instance.h"
+#include "update/update_install.h"
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmd_line,
                     int cmd_show) {
@@ -63,15 +64,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmd_line,
                              : "memory pressure cleared");
   });
 
-  platform::SingleInstance guard(L"Local\\PoTaskojo_Mutex");
-  if (!guard.owns()) {
-    // MVP: simply exit; activation of existing window comes later.
-    core::log::info("another instance is running, exiting");
-    core::log::shutdown();
-    return 0;
+  int rc = 0;
+  {
+    // Scoped: the mutex handle must be gone before a replacement instance is
+    // started, or that instance sees the name taken and quits on the spot.
+    platform::SingleInstance guard(L"Local\\PoTaskojo_Mutex");
+    if (!guard.owns()) {
+      // MVP: simply exit; activation of existing window comes later.
+      core::log::info("another instance is running, exiting");
+      core::log::shutdown();
+      return 0;
+    }
+    rc = app::App::instance().run(instance, cmd_show, open_settings,
+                                  open_rule_editor);
   }
 
-  const int rc =
-      app::App::instance().run(instance, cmd_show, open_settings, open_rule_editor);
+  update::install::restart_if_staged();
+  core::log::shutdown();
   return rc;
 }

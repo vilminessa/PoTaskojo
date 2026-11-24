@@ -37,12 +37,19 @@ file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.cpp)
 add_executable(potaskojo WIN32 ${APP_SOURCES})
 target_include_directories(potaskojo PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_compile_definitions(potaskojo PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+
+# The version the program reports comes from the same file the release gate
+# checks against the tag, so the two cannot drift apart.
+file(READ ${CMAKE_SOURCE_DIR}/VERSION POTASKOJO_VERSION_TEXT)
+string(STRIP "${POTASKOJO_VERSION_TEXT}" POTASKOJO_VERSION_TEXT)
+target_compile_definitions(potaskojo PRIVATE
+  POTASKOJO_VERSION="${POTASKOJO_VERSION_TEXT}")
 target_link_libraries(potaskojo PRIVATE
   imgui
   implot
   d3d11 dxgi d2d1 dwrite dwmapi
   pdh iphlpapi advapi32 shell32 ole32 comctl32 version
-  ws2_32 bcrypt crypt32 wintrust
+  ws2_32 bcrypt crypt32 wintrust winhttp
 )
 if(MSVC)
   target_compile_options(potaskojo PRIVATE /W4 /permissive- /Zc:__cplusplus /utf-8)
@@ -73,6 +80,7 @@ add_executable(potaskojo_tests
   tests/test_rule_engine.cpp
   tests/test_event_log.cpp
   tests/test_text.cpp
+  tests/test_update.cpp
   src/core/format.cpp
   src/core/settings.cpp
   src/core/paths.cpp
@@ -87,6 +95,10 @@ add_executable(potaskojo_tests
   src/rules/event_log.cpp
   src/platform/crash_handler.cpp
   src/platform/tray.cpp
+  src/update/update_format.cpp
+  src/update/update_crypto.cpp
+  src/update/update_check.cpp
+  src/update/update_install.cpp
 )
 target_include_directories(potaskojo_tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src
@@ -94,7 +106,7 @@ target_include_directories(potaskojo_tests PRIVATE
 )
 target_compile_definitions(potaskojo_tests PRIVATE
   UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
-target_link_libraries(potaskojo_tests PRIVATE shell32 ole32)
+target_link_libraries(potaskojo_tests PRIVATE shell32 ole32 bcrypt winhttp)
 if(MSVC)
   target_compile_options(potaskojo_tests PRIVATE
     /W4 /permissive- /Zc:__cplusplus /utf-8)
