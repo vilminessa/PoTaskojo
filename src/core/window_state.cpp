@@ -10,6 +10,8 @@ WindowState& window_state() {
     settings::load();
     w.width = settings::get_int(L"Window", L"ClientWidth", w.width);
     w.height = settings::get_int(L"Window", L"ClientHeight", w.height);
+    w.pos_x = settings::get_int(L"Window", L"PosX", w.pos_x);
+    w.pos_y = settings::get_int(L"Window", L"PosY", w.pos_y);
     w.always_on_top = settings::get_bool(L"Window", L"KeepOnTop", w.always_on_top);
     w.close_to_tray = settings::get_bool(L"Window", L"HideOnClose", w.close_to_tray);
     w.minimize_to_tray = settings::get_bool(L"Window", L"HideOnMinimize", w.minimize_to_tray);
@@ -29,6 +31,8 @@ void save_window_state() {
   const WindowState& w = window_state();
   settings::set_int(L"Window", L"ClientWidth", w.width);
   settings::set_int(L"Window", L"ClientHeight", w.height);
+  settings::set_int(L"Window", L"PosX", w.pos_x);
+  settings::set_int(L"Window", L"PosY", w.pos_y);
   settings::set_bool(L"Window", L"KeepOnTop", w.always_on_top);
   settings::set_bool(L"Window", L"HideOnClose", w.close_to_tray);
   settings::set_bool(L"Window", L"HideOnMinimize", w.minimize_to_tray);

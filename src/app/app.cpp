@@ -111,11 +111,19 @@ App& App::instance() {
 }
 
 LRESULT CALLBACK App::wnd_proc_static(HWND h, UINT m, WPARAM w, LPARAM l) {
+  // The window carries no instance pointer until WM_NCCREATE hands one over.
+  // Without storing it here every later message fell through to DefWindowProc:
+  // the window would be destroyed by the close button while the process kept
+  // running, the renderer never learned about a resize, and the tray callback
+  // went nowhere.
+  if (m == WM_NCCREATE) {
+    const auto* cs = reinterpret_cast<const CREATESTRUCTW*>(l);
+    SetWindowLongPtrW(h, GWLP_USERDATA,
+                      reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
+  }
   if (ImGui_ImplWin32_WndProcHandler(h, m, w, l)) return true;
-  return GetWindowLongPtrW(h, GWLP_USERDATA)
-             ? reinterpret_cast<App*>(GetWindowLongPtrW(h, GWLP_USERDATA))
-                   ->wnd_proc(h, m, w, l)
-             : DefWindowProcW(h, m, w, l);
+  auto* app = reinterpret_cast<App*>(GetWindowLongPtrW(h, GWLP_USERDATA));
+  return app ? app->wnd_proc(h, m, w, l) : DefWindowProcW(h, m, w, l);
 }
 
 LRESULT App::wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
@@ -129,9 +137,10 @@ LRESULT App::wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
         const UINT cmd = platform::tray_show_menu(hwnd);
         if (cmd == platform::TrayShow) show_from_tray();
         else if (cmd == platform::TrayExit) {
-          core::window_state().close_to_tray = false;  // force real exit
+          // Leave the setting alone: choosing Exit once must not turn off
+          // close-to-tray for the next launch. The loop stops on its own and
+          // flushes the settings on the way out.
           running_ = false;
-          PostMessageW(hwnd, WM_CLOSE, 0, 0);
         }
       }
       return 0;
@@ -148,6 +157,20 @@ LRESULT App::wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
           auto& ws = core::window_state();
           ws.width = static_cast<int>(pending_w_ / s + 0.5f);
           ws.height = static_cast<int>(pending_h_ / s + 0.5f);
+        }
+      }
+      return 0;
+    case WM_MOVE:
+      // Remember where the window was left, in logical units like the size.
+      // Skip while minimized or maximized: neither is where it should come
+      // back, and a minimized window parks itself off-screen.
+      if (!IsIconic(hwnd) && !IsZoomed(hwnd)) {
+        RECT rc{};
+        if (GetWindowRect(hwnd, &rc)) {
+          const float s = ui::ui_scale();
+          auto& ws = core::window_state();
+          ws.pos_x = static_cast<int>(rc.left / s + 0.5f);
+          ws.pos_y = static_cast<int>(rc.top / s + 0.5f);
         }
       }
       return 0;
@@ -258,17 +281,37 @@ bool App::create_window(HINSTANCE instance, int cmd_show) {
   else
     AdjustWindowRect(&r, style, FALSE);
 
-  // Place the window inside the work area: CW_USEDEFAULT can leave a window
-  // that is as tall as the work area hanging over the taskbar.
+  // Place the window where it was left, as long as that is still on a screen:
+  // a monitor may have been unplugged since. Otherwise centre it, which is also
+  // what happens the first time.
   int x = CW_USEDEFAULT, y = CW_USEDEFAULT;
   {
     const RECT wa = work_area_for(nullptr);
     const int win_w = r.right - r.left;
     const int win_h = r.bottom - r.top;
-    x = wa.left + ((wa.right - wa.left) - win_w) / 2;
-    y = wa.top + ((wa.bottom - wa.top) - win_h) / 2;
-    if (x < wa.left) x = wa.left;
-    if (y < wa.top) y = wa.top;
+    const float s = ui::ui_scale();
+    POINT pt{static_cast<LONG>(ws.pos_x * s), static_cast<LONG>(ws.pos_y * s)};
+    bool placed = false;
+    if (ws.pos_x != -1 && ws.pos_y != -1) {
+      if (HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONULL)) {
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
+        // Inside the work area, not merely on the monitor: the title bar has
+        // to stay reachable, and the work area is what excludes the taskbar.
+        placed = GetMonitorInfo(mon, &mi) && pt.x >= mi.rcWork.left &&
+                 pt.x < mi.rcWork.right && pt.y >= mi.rcWork.top &&
+                 pt.y < mi.rcWork.bottom;
+      }
+    }
+    if (placed) {
+      x = pt.x;
+      y = pt.y;
+    } else {
+      x = wa.left + ((wa.right - wa.left) - win_w) / 2;
+      y = wa.top + ((wa.bottom - wa.top) - win_h) / 2;
+      if (x < wa.left) x = wa.left;
+      if (y < wa.top) y = wa.top;
+    }
   }
 
   hwnd_ = CreateWindowExW(0, kWindowClass, kWindowTitle, style, x, y,
