@@ -161,10 +161,11 @@ bool RuleStore::load() {
     } else if (line.rfind("prio ", 0) == 0) {
       std::istringstream ss(line);
       std::string tag;
-      int p, io, st;
-      ss >> tag >> p >> tag >> io >> tag >> st;
+      int p, reserved, st;
+      ss >> tag >> p >> tag >> reserved >> tag >> st;
       cur.priority = static_cast<PriorityAction>(p);
-      cur.io_priority = static_cast<IoPriorityAction>(io);
+      // The middle slot held a per-process I/O priority. Windows exposes no
+      // public way to set one, so it is read and dropped.
       cur.start_action = static_cast<StartAction>(st);
     } else if (line.rfind("aff ", 0) == 0) {
       std::istringstream ss(line);
@@ -210,8 +211,9 @@ bool RuleStore::save() const {
   out << "TSRULES " << kFormatVersion << "\n";
   for (const auto& r : rules_) {
     out << "rule " << (r.enabled ? 1 : 0) << " " << escape(r.exe_name) << "\n";
-    out << "prio " << static_cast<int>(r.priority) << " io "
-        << static_cast<int>(r.io_priority) << " start "
+    // The middle slot stays reserved so every build that understands this
+    // format version reads the same layout.
+    out << "prio " << static_cast<int>(r.priority) << " io 0 start "
         << static_cast<int>(r.start_action) << "\n";
     out << "aff " << (r.affinity.enabled ? 1 : 0) << " "
         << (r.affinity.performance_cores_only ? 1 : 0) << " "

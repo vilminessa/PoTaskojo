@@ -175,7 +175,6 @@ TEST_CASE(rule_store_round_trips_every_field_through_the_file) {
   r.exe_name = L"round trip.exe";  // a space: the record is whitespace-split
   r.enabled = false;
   r.priority = rules::PriorityAction::High;
-  r.io_priority = rules::IoPriorityAction::VeryLow;
   r.start_action = rules::StartAction::Suspend;
   r.affinity.enabled = true;
   r.affinity.performance_cores_only = true;
@@ -196,8 +195,6 @@ TEST_CASE(rule_store_round_trips_every_field_through_the_file) {
   CHECK_EQ(g.enabled, false);
   CHECK_EQ(static_cast<int>(g.priority),
            static_cast<int>(rules::PriorityAction::High));
-  CHECK_EQ(static_cast<int>(g.io_priority),
-           static_cast<int>(rules::IoPriorityAction::VeryLow));
   CHECK_EQ(static_cast<int>(g.start_action),
            static_cast<int>(rules::StartAction::Suspend));
   CHECK_EQ(g.affinity.enabled, true);

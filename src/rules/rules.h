@@ -38,8 +38,13 @@ enum class PriorityAction : uint8_t {
   EfficiencyMode,  // EcoQoS (Win11) / low priority fallback
 };
 
-enum class IoPriorityAction : uint8_t { Unchanged = 0, VeryLow, Low, Normal };
-
+// No I/O priority here on purpose: Windows exposes no documented way to set it
+// for a whole process, so a field would only ever read "Unchanged". The rules
+// file keeps its slot, so existing files still load.
+//
+// Likewise no network metric: per-process byte counts need ETW, which has not
+// been wired up yet. Append new metrics as fresh values so old files keep
+// their meaning.
 enum class StartAction : uint8_t {
   None = 0,
   EndIt,    // terminate within ~1s of launch
@@ -53,7 +58,7 @@ struct CpuAffinity {
 };
 
 struct Watchdog {
-  enum class Metric : uint8_t { CpuPercent = 0, MemoryBytes, DiskBytesPerSec, NetBytesPerSec };
+  enum class Metric : uint8_t { CpuPercent = 0, MemoryBytes, DiskBytesPerSec };
   enum class Response : uint8_t {
     Notify = 0,
     DumpMini,
@@ -80,7 +85,6 @@ struct Rule {
   uint32_t version = kFormatVersion;
 
   PriorityAction priority = PriorityAction::Unchanged;
-  IoPriorityAction io_priority = IoPriorityAction::Unchanged;
   CpuAffinity affinity;
   StartAction start_action = StartAction::None;
 
@@ -90,8 +94,19 @@ struct Rule {
   // Filled by the engine: pids this rule currently "owns".
 };
 
-// --- Storage: versioned JSON-ish file in data dir (own format) ---
+// One process as the engine sees it. A name and a pid are enough to apply a
+// rule on start, but watchdogs compare per-process metrics against thresholds,
+// so the snapshot carries them along.
+struct ProcessInfo {
+  std::wstring exe;
+  uint32_t pid = 0;
+  double cpu_percent = 0.0;   // since the previous sample, all cores = 100
+  uint64_t memory_bytes = 0;  // working set
+  uint64_t read_bytes = 0;    // cumulative I/O
+  uint64_t write_bytes = 0;
+};
 
+// --- Storage: versioned JSON-ish file in data dir (own format) ---
 class RuleStore {
  public:
   static RuleStore& instance();
@@ -127,9 +142,8 @@ class RuleEngine {
   bool paused() const { return paused_.load(); }
   void set_paused(bool p);
 
-  // Called by collectors/UI after each process snapshot.
-  void on_process_snapshot(const std::vector<std::wstring>& running_exes,
-                           const std::vector<uint32_t>& running_pids);
+  // Called by the UI after each process snapshot.
+  void on_process_snapshot(const std::vector<ProcessInfo>& procs);
 
   // Status for UI.
   struct Status {
@@ -144,6 +158,9 @@ class RuleEngine {
   RuleEngine() = default;
   void note_action();       // safety breaker bookkeeping
   bool safety_ok() const;
+  // Carries out one watchdog response. Ending, suspending, dumping or
+  // launching something counts against the safety breaker.
+  void fire_watchdog(const Watchdog& w, const ProcessInfo& p);
 
   std::atomic<bool> running_{false};
   std::atomic<bool> paused_{false};

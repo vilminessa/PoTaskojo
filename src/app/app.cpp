@@ -523,15 +523,19 @@ void App::render_frame() {
     auto snap = ui::process_collector().latest();
     if (snap && snap->seq != last_seq) {
       last_seq = snap->seq;
-      std::vector<std::wstring> exes;
-      std::vector<uint32_t> pids;
-      exes.reserve(snap->rows.size());
-      pids.reserve(snap->rows.size());
+      std::vector<rules::ProcessInfo> procs;
+      procs.reserve(snap->rows.size());
       for (const auto& r : snap->rows) {
-        exes.push_back(r.name);
-        pids.push_back(r.pid);
+        rules::ProcessInfo p;
+        p.exe = r.name;
+        p.pid = r.pid;
+        p.cpu_percent = r.cpu_percent;
+        p.memory_bytes = r.working_set;
+        p.read_bytes = r.read_bytes;
+        p.write_bytes = r.write_bytes;
+        procs.push_back(std::move(p));
       }
-      rules::RuleEngine::instance().on_process_snapshot(exes, pids);
+      rules::RuleEngine::instance().on_process_snapshot(procs);
     }
   }
 

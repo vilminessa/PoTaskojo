@@ -57,7 +57,6 @@ const char* wd_metric_name(rules::Watchdog::Metric m) {
     case M::CpuPercent: return "CPU %";
     case M::MemoryBytes: return "Memory";
     case M::DiskBytesPerSec: return "Disk B/s";
-    case M::NetBytesPerSec: return "Net B/s";
   }
   return "?";
 }

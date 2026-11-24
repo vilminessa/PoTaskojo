@@ -56,11 +56,14 @@ LONG WINAPI unhandled_exception(EXCEPTION_POINTERS* info) {
 
 }  // namespace
 
-bool write_minidump(const wchar_t* reason) {
+namespace {
+// Shared by every dump path: pick the file, choose the dump kind, report.
+bool write_dump_file(HANDLE process, DWORD pid, bool full,
+                     const wchar_t* reason) {
   const auto dumps = core::paths::get().dumps_dir;
   CreateDirectoryW(dumps.c_str(), nullptr);
 
-  std::wstring name = L"PoTaskojo_Fault_";
+  std::wstring name = full ? L"PoTaskojo_Full_" : L"PoTaskojo_Fault_";
   name += timestamp_string();
   name += L".dmp";
   const auto path = dumps / name;
@@ -69,9 +72,10 @@ bool write_minidump(const wchar_t* reason) {
                          FILE_ATTRIBUTE_NORMAL, nullptr);
   if (h == INVALID_HANDLE_VALUE) return false;
 
-  const BOOL ok = MiniDumpWriteDump(
-      GetCurrentProcess(), GetCurrentProcessId(), h,
-      MiniDumpWithIndirectlyReferencedMemory, nullptr, nullptr, nullptr);
+  const MINIDUMP_TYPE kind = full ? MiniDumpWithFullMemory
+                                  : MiniDumpWithIndirectlyReferencedMemory;
+  const BOOL ok =
+      MiniDumpWriteDump(process, pid, h, kind, nullptr, nullptr, nullptr);
   CloseHandle(h);
 
   if (!ok) {
@@ -80,10 +84,32 @@ bool write_minidump(const wchar_t* reason) {
   }
 
   char log[256];
-  snprintf(log, sizeof(log), "minidump saved: %ls (%ls)\n",
-           name.c_str(), reason ? reason : L"");
+  snprintf(log, sizeof(log), "%s saved: %ls (%ls)\n",
+           full ? "complete dump" : "minidump", name.c_str(),
+           reason ? reason : L"");
   append_crash_log(log);
   return true;
+}
+}  // namespace
+
+bool write_minidump(const wchar_t* reason) {
+  return write_dump_file(GetCurrentProcess(), GetCurrentProcessId(), false,
+                         reason);
+}
+
+bool write_process_dump(uint32_t pid, bool full, const wchar_t* reason) {
+  if (!pid) return false;
+  if (pid == GetCurrentProcessId())
+    return write_dump_file(GetCurrentProcess(), pid, full, reason);
+
+  // A watchdog response has to capture the program it fired on, and
+  // MiniDumpWriteDump needs to read that process's address space.
+  HANDLE proc =
+      OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+  if (!proc) return false;
+  const bool ok = write_dump_file(proc, pid, full, reason);
+  CloseHandle(proc);
+  return ok;
 }
 
 void install_crash_handler() {

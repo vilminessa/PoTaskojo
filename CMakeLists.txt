@@ -67,12 +67,16 @@ add_executable(potaskojo_tests
   tests/test_settings.cpp
   tests/test_scale.cpp
   tests/test_rule_store.cpp
+  tests/test_watchdog.cpp
+  tests/test_action_exec.cpp
   src/core/format.cpp
   src/core/settings.cpp
   src/core/paths.cpp
   src/core/log.cpp
   src/ui/scale.cpp
   src/rules/rule_store.cpp
+  src/rules/watchdog_eval.cpp
+  src/rules/action_exec.cpp
 )
 target_include_directories(potaskojo_tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src
