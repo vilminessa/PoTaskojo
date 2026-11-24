@@ -1,0 +1,3 @@
+# cmd.exe needs CRLF: with LF-only endings it splits lines at byte offsets and
+# the script falls apart mid-word.
+*.bat text eol=crlf

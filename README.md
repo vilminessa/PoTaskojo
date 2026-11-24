@@ -86,6 +86,10 @@ build\Release\potaskojo.exe
 Add `-DPOTASKOJO_WERROR=ON` to treat warnings as errors — continuous
 integration builds that way.
 
+`debug.bat` wraps the common steps in a menu (build, tests, similarity audit,
+launching with the internal test flags, git, screenshots); `debug.bat 6` builds
+and tests in one go, `debug.bat 9` tails the log.
+
 Dependencies are vendored under `external/` (Dear ImGui with docking and
 ImPlot), so the build needs no network access.
 

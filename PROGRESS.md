@@ -40,6 +40,11 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
+Быстрый прогон через меню: `debug.bat` — сборка, тесты, аудит сходства, запуск
+с внутренними флагами, git, скриншоты. `debug.bat 6` соберёт и протестирует,
+`debug.bat 8 <путь>` прогонит аудит по архиву строк (путь можно задать и
+переменной `RE_NOTES`), `debug.bat 5` — просто соберёт.
+
 ## Ключевые решения
 
 - **Сбор данных**: worker-поток → staging → `shared_ptr` swap; UI-поток не
