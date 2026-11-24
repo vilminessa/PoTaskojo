@@ -12,6 +12,7 @@
 #include "collectors/performance.h"
 #include "ui/scale.h"
 #include "core/settings.h"
+#include "core/format.h"
 
 namespace ui {
 namespace {
@@ -75,41 +76,6 @@ ChartOpts& opts() {
 
 void persist(const wchar_t* key, bool value) {
   core::settings::set_bool(L"Charts", key, value);
-}
-
-// --- formatting ---
-
-std::string format_bytes(uint64_t b) {
-  char buf[64];
-  if (b < 1024ull) snprintf(buf, sizeof(buf), "%llu B", b);
-  else if (b < 1024ull * 1024) snprintf(buf, sizeof(buf), "%.1f KB", b / 1024.0);
-  else if (b < 1024ull * 1024 * 1024)
-    snprintf(buf, sizeof(buf), "%.1f MB", b / (1024.0 * 1024));
-  else
-    snprintf(buf, sizeof(buf), "%.2f GB", b / (1024.0 * 1024 * 1024));
-  return buf;
-}
-
-// Human-readable rate, magnitude chosen from the value itself.
-std::string format_rate(double bps, bool bits) {
-  char buf[64];
-  const double v = bits ? bps * 8.0 : bps;
-  const double base = bits ? 1000.0 : 1024.0;
-  if (v < base) snprintf(buf, sizeof(buf), "%.0f %s", v, bits ? "b/s" : "B/s");
-  else if (v < base * base)
-    snprintf(buf, sizeof(buf), "%.1f %s", v / base, bits ? "kb/s" : "KB/s");
-  else if (v < base * base * base)
-    snprintf(buf, sizeof(buf), "%.1f %s", v / (base * base), bits ? "Mb/s" : "MB/s");
-  else
-    snprintf(buf, sizeof(buf), "%.2f %s", v / (base * base * base),
-             bits ? "Gb/s" : "GB/s");
-  return buf;
-}
-
-std::string format_pct(double p) {
-  char buf[32];
-  snprintf(buf, sizeof(buf), "%.1f%%", p);
-  return buf;
 }
 
 struct Stats {
@@ -264,19 +230,19 @@ void render_chart(const char* id, const char* title,
   // Stats line under the plot.
   const Stats st = stats_of(s1.v);
   std::string stats =
-      (rate ? format_rate(st.now, opts().bits) : format_pct(st.now)) +
+      (rate ? core::format::format_rate(st.now, opts().bits) : core::format::format_pct(st.now)) +
       " now  |  peak " +
-      (rate ? format_rate(st.peak, opts().bits) : format_pct(st.peak)) +
+      (rate ? core::format::format_rate(st.peak, opts().bits) : core::format::format_pct(st.peak)) +
       "  |  avg " +
-      (rate ? format_rate(st.avg, opts().bits) : format_pct(st.avg)) +
+      (rate ? core::format::format_rate(st.avg, opts().bits) : core::format::format_pct(st.avg)) +
       "  |  min " +
-      (rate ? format_rate(st.minv, opts().bits) : format_pct(st.minv));
+      (rate ? core::format::format_rate(st.minv, opts().bits) : core::format::format_pct(st.minv));
   if (has2) {
     const Stats st2 = stats_of(s2->v);
     stats += "  ||  ";
     stats += label2;
     stats += " ";
-    stats += rate ? format_rate(st2.now, opts().bits) : format_pct(st2.now);
+    stats += rate ? core::format::format_rate(st2.now, opts().bits) : core::format::format_pct(st2.now);
   }
 
   const ImVec2 size(-1, dp(105.0f));
@@ -433,7 +399,7 @@ void render_performance_tab() {
 
   if (o.show_cpu) {
     render_chart("cpu", "CPU", g_cpu, "Total", kCpu, &g_cpu_kern, "Kernel",
-                 kKern, true, false, format_pct(snap->cpu.total_percent).c_str());
+                 kKern, true, false, core::format::format_pct(snap->cpu.total_percent).c_str());
 
     // Per-core bars.
     if (!snap->cpu.per_core.empty()) {
@@ -456,30 +422,30 @@ void render_performance_tab() {
 
   if (o.show_mem) {
     const std::string head =
-        format_bytes(snap->memory.used_bytes) + " / " +
-        format_bytes(snap->memory.total_bytes);
+        core::format::format_bytes(snap->memory.used_bytes) + " / " +
+        core::format::format_bytes(snap->memory.total_bytes);
     render_chart("mem", "Memory", g_mem, "RAM used", kMem, &g_swap, "Swap",
                  kSwap, true, false, head.c_str());
     ImGui::TextDisabled(
         "Committed %s of %s  |  Swap %s of %s",
-        format_bytes(snap->memory.committed_bytes).c_str(),
-        format_bytes(snap->memory.commit_limit).c_str(),
-        format_bytes(snap->memory.swap_used_bytes).c_str(),
-        format_bytes(snap->memory.swap_total_bytes).c_str());
+        core::format::format_bytes(snap->memory.committed_bytes).c_str(),
+        core::format::format_bytes(snap->memory.commit_limit).c_str(),
+        core::format::format_bytes(snap->memory.swap_used_bytes).c_str(),
+        core::format::format_bytes(snap->memory.swap_total_bytes).c_str());
     ImGui::Separator();
   }
 
   if (o.show_disk) {
     render_chart("disk", "Disk", g_disk_r, "Read", kRead, &g_disk_w, "Write",
-                 kWrite, false, true, format_rate(disk_total, false).c_str());
+                 kWrite, false, true, core::format::format_rate(disk_total, false).c_str());
     ImGui::Separator();
   }
 
   if (o.show_net) {
     const std::string head =
-        "Send " + format_rate(static_cast<double>(snap->net.bytes_sent_s), o.bits) +
+        "Send " + core::format::format_rate(static_cast<double>(snap->net.bytes_sent_s), o.bits) +
         "  |  Recv " +
-        format_rate(static_cast<double>(snap->net.bytes_recv_s), o.bits);
+        core::format::format_rate(static_cast<double>(snap->net.bytes_recv_s), o.bits);
     render_chart("net", "Network", g_net_s, "Send", kSend, &g_net_r, "Recv",
                  kRecv, false, true, head.c_str());
   }

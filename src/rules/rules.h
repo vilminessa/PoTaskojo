@@ -21,7 +21,9 @@ namespace rules {
 
 // --- Data model (versioned serialization, spec §5.3) ---
 
-inline constexpr uint32_t kFormatVersion = 1;
+// Data format of rules.tsv. v2 escapes spaces inside the program name, which
+// is the only field that is read token-by-token; files written as v1 still load.
+inline constexpr uint32_t kFormatVersion = 2;
 inline constexpr size_t kMaxRules = 128;
 inline constexpr size_t kMaxWatchdogsPerRule = 4;
 

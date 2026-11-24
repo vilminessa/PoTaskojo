@@ -41,20 +41,29 @@ std::wstring lower(std::wstring s) {
 
 // --- Minimal JSON-ish serialization (no external deps) ---
 // Format (line-oriented, versioned):
-//   TSRULES v1
+//   TSRULES v2
 //   rule <enabled> <exe_name>
 //   prio <n> io <n> start <n>
 //   aff <enabled> <pcores_only> <mask-hex>
 //   wd <metric> <threshold> <sustain> <response> <freq> <every_n> <cmd>
 //   end
+//
+// v2 escapes spaces as \s: a file name is the one field read with >>, so an
+// unescaped space used to truncate "my app.exe" to "my". v1 files without the
+// escape still load.
 
 std::string escape(const std::wstring& w) {
   std::string s = narrow(w);
   std::string out;
   out.reserve(s.size());
   for (char c : s) {
-    if (c == '\n' || c == '\r' || c == '\\') { out += '\\'; out += (c == '\n' ? 'n' : c == '\r' ? 'r' : '\\'); }
-    else out += c;
+    if (c == '\n' || c == '\r' || c == '\\' || c == ' ') {
+      out += '\\';
+      if (c == '\n') out += 'n';
+      else if (c == '\r') out += 'r';
+      else if (c == ' ') out += 's';
+      else out += '\\';
+    } else out += c;
   }
   return out;
 }
@@ -65,7 +74,10 @@ std::wstring unescape(const std::string& s) {
   for (size_t i = 0; i < s.size(); ++i) {
     if (s[i] == '\\' && i + 1 < s.size()) {
       char n = s[++i];
-      out += (n == 'n') ? '\n' : (n == 'r') ? '\r' : n;
+      if (n == 'n') out += '\n';
+      else if (n == 'r') out += '\r';
+      else if (n == 's') out += ' ';
+      else out += n;
     } else out += s[i];
   }
   return widen(out);

@@ -14,6 +14,7 @@
 #include "ui/scale.h"
 #include "collectors/process_actions.h"
 #include "rules/rules.h"
+#include "core/format.h"
 
 namespace ui {
 
@@ -44,23 +45,6 @@ std::string narrow(const std::wstring& w) {
   WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
                       s.data(), n, nullptr, nullptr);
   return s;
-}
-
-std::string format_bytes(uint64_t b) {
-  char buf[64];
-  if (b < 1024ull) snprintf(buf, sizeof(buf), "%llu B", b);
-  else if (b < 1024ull * 1024) snprintf(buf, sizeof(buf), "%.1f KB", b / 1024.0);
-  else if (b < 1024ull * 1024 * 1024)
-    snprintf(buf, sizeof(buf), "%.1f MB", b / (1024.0 * 1024));
-  else
-    snprintf(buf, sizeof(buf), "%.2f GB", b / (1024.0 * 1024 * 1024));
-  return buf;
-}
-
-std::string format_cpu(double pct) {
-  char buf[32];
-  snprintf(buf, sizeof(buf), "%.1f", pct);
-  return buf;
 }
 
 const char* priority_name(int pc) {
@@ -194,12 +178,12 @@ void render_processes_tab() {
         ImGui::TableNextColumn();
         ImGui::Text("%u", r.pid);
         ImGui::TableNextColumn();
-        ImGui::TextUnformatted(format_cpu(r.cpu_percent).c_str());
+        ImGui::TextUnformatted(core::format::format_cpu(r.cpu_percent).c_str());
         ImGui::TableNextColumn();
-        ImGui::TextUnformatted(format_bytes(r.working_set).c_str());
+        ImGui::TextUnformatted(core::format::format_bytes(r.working_set).c_str());
         ImGui::TableNextColumn();
         ImGui::TextUnformatted(
-            format_bytes(r.read_bytes + r.write_bytes).c_str());
+            core::format::format_bytes(r.read_bytes + r.write_bytes).c_str());
         ImGui::TableNextColumn();
         ImGui::TextUnformatted(priority_display(r).c_str());
         ImGui::TableNextColumn();

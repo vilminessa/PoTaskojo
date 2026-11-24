@@ -54,3 +54,38 @@ option(POTASKOJO_WERROR "Treat compiler warnings as errors" OFF)
 if(MSVC AND POTASKOJO_WERROR)
   target_compile_options(potaskojo PRIVATE /WX)
 endif()
+
+# ---- Tests ----
+# There is no library target to link against: the app is one glob of sources
+# compiled straight into an executable. The test binary therefore compiles the
+# units under test directly - pulling the whole app in would drag D3D11 and the
+# window along for the ride.
+enable_testing()
+add_executable(potaskojo_tests
+  tests/main.cpp
+  tests/test_format.cpp
+  tests/test_settings.cpp
+  tests/test_scale.cpp
+  tests/test_rule_store.cpp
+  src/core/format.cpp
+  src/core/settings.cpp
+  src/core/paths.cpp
+  src/core/log.cpp
+  src/ui/scale.cpp
+  src/rules/rule_store.cpp
+)
+target_include_directories(potaskojo_tests PRIVATE
+  ${CMAKE_SOURCE_DIR}/src
+  ${CMAKE_SOURCE_DIR}/tests
+)
+target_compile_definitions(potaskojo_tests PRIVATE
+  UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+target_link_libraries(potaskojo_tests PRIVATE shell32 ole32)
+if(MSVC)
+  target_compile_options(potaskojo_tests PRIVATE
+    /W4 /permissive- /Zc:__cplusplus /utf-8)
+  if(POTASKOJO_WERROR)
+    target_compile_options(potaskojo_tests PRIVATE /WX)
+  endif()
+endif()
+add_test(NAME unit COMMAND potaskojo_tests)
