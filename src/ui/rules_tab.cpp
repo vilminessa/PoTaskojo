@@ -11,6 +11,7 @@
 
 #include "core/format.h"
 #include "core/text.h"
+#include "rules/cpu_affinity.h"
 #include "rules/rules.h"
 #include "ui/scale.h"
 #include "ui/widgets.h"
@@ -85,15 +86,8 @@ std::string g_status;
 
 // --- Rule editor --------------------------------------------------------
 
-// How many cores can be offered: SetProcessAffinityMask works inside a single
-// processor group and a group holds at most 64. Beyond that the group-aware
-// API would be needed, so extra cores are simply not listed.
-int core_count() {
-  DWORD n = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
-  if (n == 0) n = 1;
-  if (n > 64) n = 64;
-  return static_cast<int>(n);
-}
+// How many cores can be offered lives with the affinity module so the editor
+// and the engine cannot disagree about the addressable range.
 
 // Byte thresholds read better as whole numbers; a percentage keeps decimals.
 const char* threshold_format(rules::Watchdog::Metric m) {
@@ -204,7 +198,7 @@ void render_editor() {
   ImGui::Checkbox("Restrict to a subset of cores",
                   &g_edit_rule.affinity.enabled);
   if (g_edit_rule.affinity.enabled) {
-    const int cores = core_count();
+    const int cores = system_core_count();
     auto& mask = g_edit_rule.affinity.mask;
     if (mask.size() != static_cast<size_t>(cores)) {
       // A mask written on another machine keeps the cores both machines have

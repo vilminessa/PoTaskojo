@@ -7,41 +7,8 @@
 #include <windows.h>
 
 #include "rules/action_exec.h"
+#include "test_process.h"
 #include "test_support.h"
-
-namespace {
-
-class Child {
- public:
-  Child() = default;
-  Child(const Child&) = delete;
-  Child& operator=(const Child&) = delete;
-  ~Child() {
-    if (pi_.hProcess) {
-      TerminateProcess(pi_.hProcess, 0);
-      WaitForSingleObject(pi_.hProcess, 5000);
-      CloseHandle(pi_.hProcess);
-    }
-    if (pi_.hThread) CloseHandle(pi_.hThread);
-  }
-
-  bool start() {
-    STARTUPINFOW si{};
-    si.cb = sizeof(si);
-    wchar_t cmd[] = L"ping.exe -n 60 127.0.0.1";
-    return CreateProcessW(nullptr, cmd, nullptr, nullptr, FALSE,
-                          CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi_) !=
-           FALSE;
-  }
-
-  uint32_t pid() const { return pi_.dwProcessId; }
-  HANDLE handle() const { return pi_.hProcess; }
-
- private:
-  PROCESS_INFORMATION pi_{};
-};
-
-}  // namespace
 
 TEST_CASE(action_end_terminates_a_live_process) {
   Child child;

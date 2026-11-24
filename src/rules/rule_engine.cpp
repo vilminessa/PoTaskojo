@@ -11,6 +11,7 @@
 #include "core/text.h"
 #include "platform/crash_handler.h"
 #include "rules/action_exec.h"
+#include "rules/cpu_affinity.h"
 #include "rules/watchdog_eval.h"
 
 namespace rules {
@@ -266,6 +267,13 @@ void RuleEngine::on_process_snapshot(const std::vector<ProcessInfo>& procs) {
             if (pc) SetPriorityClass(handle, static_cast<DWORD>(pc));
             CloseHandle(handle);
           }
+        }
+
+        // Affinity is applied once per instance too: re-applying it every
+        // snapshot would fight whatever the program does with its own threads.
+        if (rule.affinity.enabled) {
+          if (!apply_affinity(rule.affinity, proc.pid))
+            core::log::warn("rule: affinity not applied for " + narrow(exe));
         }
 
         {
