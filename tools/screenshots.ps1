@@ -75,6 +75,7 @@ Grab (Join-Path $OutDir "settings_100.png")  "--internal-show-settings" 0 0 $fal
 Grab (Join-Path $OutDir "settings_scaled.png") "--internal-show-settings" 150 0 $false
 Grab (Join-Path $OutDir "perf_100.png")      ""                       0   1 $false
 Grab (Join-Path $OutDir "perf_150.png")      ""                     150   1 $false
+Grab (Join-Path $OutDir "startup_100.png")   ""                       0   3 $false
 
 # --- rules: editor dialog and the event journal ---------------------------
 # The demo rules are written, photographed and then removed: the editor is

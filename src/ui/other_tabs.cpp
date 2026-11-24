@@ -10,6 +10,7 @@
 #include <imgui.h>
 
 #include "collectors/connections.h"
+#include "core/text.h"
 #include "ui/scale.h"
 #include "collectors/services.h"
 #include "collectors/startup.h"
@@ -17,16 +18,7 @@
 namespace ui {
 namespace {
 
-std::string narrow(const std::wstring& w) {
-  if (w.empty()) return {};
-  const int n = WideCharToMultiByte(CP_UTF8, 0, w.data(),
-                                    static_cast<int>(w.size()),
-                                    nullptr, 0, nullptr, nullptr);
-  std::string s(n, '\0');
-  WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
-                      s.data(), n, nullptr, nullptr);
-  return s;
-}
+using core::text::narrow;
 
 // Shared status line for action feedback.
 const char*& status_line() {
@@ -77,17 +69,9 @@ void render_services_tab() {
     while (clipper.Step()) {
       for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
         const auto& r = snap->rows[i];
-        if (*search) {
-          const std::string n = narrow(r.name), d = narrow(r.display_name);
-          auto ci = [](std::string s) {
-            for (auto& ch : s) ch = static_cast<char>(tolower((unsigned char)ch));
-            return s;
-          };
-          std::string q(search);
-          if (ci(n).find(ci(q)) == std::string::npos &&
-              ci(d).find(ci(q)) == std::string::npos)
-            continue;
-        }
+        if (*search && !core::text::contains_ci(narrow(r.name), search) &&
+            !core::text::contains_ci(narrow(r.display_name), search))
+          continue;
         ImGui::PushID(i);
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
@@ -155,6 +139,11 @@ void render_startup_tab() {
     ImGui::TextDisabled("Collecting startup entries...");
     return;
   }
+  static char search[128] = "";
+  ImGui::SetNextItemWidth(dp(260.0f));
+  ImGui::InputTextWithHint("##startup_search", "Search...", search,
+                           sizeof(search));
+  ImGui::SameLine();
   ImGui::TextDisabled("%zu entries, %zu enabled", snap->rows.size(),
                       snap->enabled_count);
   ImGui::SameLine();
@@ -174,6 +163,10 @@ void render_startup_tab() {
 
     for (size_t i = 0; i < snap->rows.size(); ++i) {
       const auto& r = snap->rows[i];
+      if (*search && !core::text::contains_ci(narrow(r.name), search) &&
+          !core::text::contains_ci(narrow(r.command), search) &&
+          !core::text::contains_ci(narrow(r.location), search))
+        continue;
       ImGui::PushID(static_cast<int>(i));
       ImGui::TableNextRow();
       ImGui::TableNextColumn();
@@ -188,6 +181,13 @@ void render_startup_tab() {
       ImGui::TextDisabled("%s", narrow(r.location).c_str());
       ImGui::TableNextColumn();
       ImGui::TextDisabled("%s", narrow(r.command).c_str());
+      // A command line is far wider than the column, and it is exactly what
+      // someone checking a startup entry wants to read in full.
+      if (ImGui::IsItemHovered() && !r.command.empty()) {
+        ImGui::BeginTooltip();
+        ImGui::TextWrapped("%s", narrow(r.command).c_str());
+        ImGui::EndTooltip();
+      }
 
       if (ImGui::BeginPopupContextItem()) {
         if (ImGui::MenuItem("Enable")) { c.set_enabled(r, true); c.refresh_now(); }
@@ -247,13 +247,10 @@ void render_connections_tab() {
       for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
         const auto& r = snap->rows[i];
         if (*search) {
-          auto ci = [](std::string s) {
-            for (auto& ch : s) ch = static_cast<char>(tolower((unsigned char)ch));
-            return s;
-          };
-          std::string hay = ci(narrow(r.process_name) + " " + narrow(r.local_addr) +
-                               " " + narrow(r.remote_addr));
-          if (hay.find(ci(search)) == std::string::npos) continue;
+          const std::string hay =
+              narrow(r.process_name) + " " + narrow(r.local_addr) + " " +
+              narrow(r.remote_addr);
+          if (!core::text::contains_ci(hay, search)) continue;
         }
         ImGui::PushID(i);
         ImGui::TableNextRow();

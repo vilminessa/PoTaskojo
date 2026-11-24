@@ -454,6 +454,19 @@ void render_rules_tab() {
     return;
   }
 
+  // Filter by program name; the store holds at most kMaxRules rows, so matching
+  // them on every frame costs nothing worth measuring.
+  static char search[128] = "";
+  ImGui::SetNextItemWidth(dp(260.0f));
+  ImGui::InputTextWithHint("##rules_search", "Search...", search,
+                           sizeof(search));
+  size_t shown = 0;
+  for (const auto& r : rules_list)
+    if (!*search || core::text::contains_ci(narrow(r.exe_name), search))
+      ++shown;
+  ImGui::SameLine();
+  ImGui::TextDisabled("%zu shown", shown);
+
   const ImGuiTableFlags flags =
       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable;
   if (ImGui::BeginTable("##rules", 5, flags)) {
@@ -465,6 +478,9 @@ void render_rules_tab() {
     ImGui::TableHeadersRow();
 
     for (size_t i = 0; i < rules_list.size(); ++i) {
+      if (*search &&
+          !core::text::contains_ci(narrow(rules_list[i].exe_name), search))
+        continue;
       Rule r = rules_list[i];
       ImGui::PushID(static_cast<int>(i));
       ImGui::TableNextRow();

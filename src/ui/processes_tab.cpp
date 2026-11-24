@@ -188,6 +188,13 @@ void render_processes_tab() {
         ImGui::TextUnformatted(priority_display(r).c_str());
         ImGui::TableNextColumn();
         ImGui::TextDisabled("%s", narrow(r.image_path).c_str());
+        // The Path column clips long paths; the name cell already shows one,
+        // but this is the cell the eye goes to.
+        if (ImGui::IsItemHovered() && !r.image_path.empty()) {
+          ImGui::BeginTooltip();
+          ImGui::TextWrapped("%s", narrow(r.image_path).c_str());
+          ImGui::EndTooltip();
+        }
 
         // Right-click: process actions.
         if (ImGui::BeginPopupContextItem()) {
