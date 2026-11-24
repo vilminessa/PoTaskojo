@@ -41,6 +41,9 @@ function Grab([string]$path, [string]$argStr, [int]$scale, [int]$tab, [bool]$lig
   if ($scale -gt 0) { $lines += "UIScalePct=$scale" }
   $lines += "[Theme]"
   $lines += "LightMode=$(if ($light) {1} else {0})"
+  # The profile folder may not exist yet on a fresh machine; Set-Content does
+  # not create directories and would abort the whole run.
+  New-Item -ItemType Directory -Force -Path (Split-Path -Parent $ini) | Out-Null
   Set-Content $ini ($lines -join "`r`n") -Encoding Unicode
 
   if ($argStr) { $p = Start-Process $exe -ArgumentList $argStr -PassThru }
