@@ -22,4 +22,9 @@ enum TrayCommand : UINT {
 };
 UINT tray_show_menu(HWND hwnd);
 
+// Puts a balloon over the icon. Windows replaces a balloon that is still
+// showing, so the caller decides how often it is worth interrupting for -
+// this only does the plumbing.
+void tray_balloon(const wchar_t* title, const wchar_t* body, bool warning);
+
 }  // namespace platform

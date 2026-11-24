@@ -71,6 +71,7 @@ add_executable(potaskojo_tests
   tests/test_action_exec.cpp
   tests/test_affinity.cpp
   tests/test_rule_engine.cpp
+  tests/test_event_log.cpp
   tests/test_text.cpp
   src/core/format.cpp
   src/core/settings.cpp
@@ -83,7 +84,9 @@ add_executable(potaskojo_tests
   src/rules/action_exec.cpp
   src/rules/cpu_affinity.cpp
   src/rules/rule_engine.cpp
+  src/rules/event_log.cpp
   src/platform/crash_handler.cpp
+  src/platform/tray.cpp
 )
 target_include_directories(potaskojo_tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src

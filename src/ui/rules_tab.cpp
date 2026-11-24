@@ -527,6 +527,45 @@ void render_rules_tab() {
     ImGui::EndTable();
   }
 
+  // --- What the monitors actually did ---
+  ImGui::Spacing();
+  SectionHeader("Events");
+  const auto& events = RuleEngine::instance().events();
+  if (events.empty()) {
+    Hint("Nothing has fired yet.");
+  } else {
+    // Newest first, so the top row is the one to read and scrolling is only
+    // needed to look further back.
+    const ImGuiTableFlags event_flags = ImGuiTableFlags_ScrollY |
+                                        ImGuiTableFlags_RowBg |
+                                        ImGuiTableFlags_NoSavedSettings;
+    if (ImGui::BeginTable("##events", 3, event_flags, ImVec2(0, dp(150.0f)))) {
+      ImGui::TableSetupScrollFreeze(0, 1);
+      ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed,
+                              dp(70.0f));
+      ImGui::TableSetupColumn("Program", ImGuiTableColumnFlags_WidthFixed,
+                              dp(200.0f));
+      ImGui::TableSetupColumn("Outcome", ImGuiTableColumnFlags_WidthStretch);
+      ImGui::TableHeadersRow();
+
+      ImGuiListClipper clip;
+      clip.Begin(static_cast<int>(events.size()));
+      while (clip.Step()) {
+        for (int i = clip.DisplayStart; i < clip.DisplayEnd; ++i) {
+          const auto& e = events[static_cast<size_t>(i)];
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::TextDisabled("%s", e.time.c_str());
+          ImGui::TableNextColumn();
+          ImGui::TextUnformatted(e.program.c_str());
+          ImGui::TableNextColumn();
+          ImGui::TextUnformatted(e.outcome.c_str());
+        }
+      }
+      ImGui::EndTable();
+    }
+  }
+
   ImGui::Spacing();
   Hint("Rules apply only while PoTaskojo is running. Enable auto-start + tray "
        "so they keep working after sign-in.");

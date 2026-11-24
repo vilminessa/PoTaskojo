@@ -39,8 +39,18 @@ void tray_remove() {
 void tray_set_tooltip(const wchar_t* text) {
   if (!g_added || !text) return;
   lstrcpynW(g_nid.szTip, text, ARRAYSIZE(g_nid.szTip));
-  g_nid.uFlags = NIF_TIP;
+  g_nid.uFlags |= NIF_TIP;  // keep whatever else is already registered
   Shell_NotifyIconW(NIM_MODIFY, &g_nid);
+}
+
+void tray_balloon(const wchar_t* title, const wchar_t* body, bool warning) {
+  if (!g_added || !title || !body) return;
+  NOTIFYICONDATAW nid = g_nid;  // identity only; flags are set explicitly
+  nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_INFO;
+  nid.dwInfoFlags = warning ? NIIF_WARNING : NIIF_INFO;
+  lstrcpynW(nid.szInfoTitle, title, ARRAYSIZE(nid.szInfoTitle));
+  lstrcpynW(nid.szInfo, body, ARRAYSIZE(nid.szInfo));
+  Shell_NotifyIconW(NIM_MODIFY, &nid);
 }
 
 UINT tray_show_menu(HWND hwnd) {

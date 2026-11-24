@@ -17,6 +17,8 @@
 #include <thread>
 #include <vector>
 
+#include "rules/event_log.h"
+
 namespace rules {
 
 // --- Data model (versioned serialization, spec §5.3) ---
@@ -167,6 +169,10 @@ class RuleEngine {
   };
   Status status() const;
 
+  // What the monitors have done lately, newest first. Written only by the
+  // snapshot feed, which runs before the UI reads it in the same frame.
+  const std::vector<RuleEvent>& events() const { return events_.all(); }
+
  private:
   RuleEngine() = default;
   void note_action();       // safety breaker bookkeeping
@@ -174,6 +180,10 @@ class RuleEngine {
   // Carries out one watchdog response. Ending, suspending, dumping or
   // launching something counts against the safety breaker.
   void fire_watchdog(const Watchdog& w, const ProcessInfo& p);
+  // Files a firing in the journal and shows a balloon, at most one every few
+  // seconds so a monitor firing in a loop cannot turn the tray into a drum.
+  void record_event(const std::string& program, Watchdog::Response response,
+                    const std::string& outcome);
 
   std::atomic<bool> running_{false};
   std::atomic<bool> paused_{false};
@@ -186,6 +196,9 @@ class RuleEngine {
   // Safety breaker: actions in the last rolling minute.
   mutable std::mutex breaker_mutex_;
   std::vector<uint64_t> action_timestamps_ms_;
+
+  EventLog events_;
+  uint64_t last_balloon_ms_ = 0;
 };
 
 }  // namespace rules

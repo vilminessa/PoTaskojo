@@ -4,12 +4,14 @@
 #include <tlhelp32.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <string>
 #include <unordered_map>
 
 #include "core/log.h"
 #include "core/text.h"
 #include "platform/crash_handler.h"
+#include "platform/tray.h"
 #include "rules/action_exec.h"
 #include "rules/cpu_affinity.h"
 #include "rules/watchdog_eval.h"
@@ -18,6 +20,7 @@ namespace rules {
 namespace {
 
 using core::text::narrow;
+using core::text::widen;
 
 // Safety breaker thresholds (spec §5.2).
 constexpr uint32_t kMaxActionsPerMinute = 20;   // end/suspend per rolling minute
@@ -73,6 +76,9 @@ struct PidTrack {
 // loop must not be able to fill the disk. Rolling window, shared by all rules.
 constexpr uint32_t kMaxDumpsPerHour = 10;
 constexpr uint64_t kDumpWindowMs = 60ull * 60ull * 1000ull;
+// Windows replaces a balloon that is still on screen, so showing one every
+// snapshot would announce almost nothing and annoy in the process.
+constexpr uint64_t kBalloonIntervalMs = 5000;
 std::mutex g_dump_mutex;
 std::vector<uint64_t> g_dump_times_ms;
 
@@ -311,18 +317,21 @@ void RuleEngine::on_process_snapshot(const std::vector<ProcessInfo>& procs) {
 
 void RuleEngine::fire_watchdog(const Watchdog& w, const ProcessInfo& p) {
   const std::string exe = narrow(p.exe);
-  std::string event;
+  // The outcome without the program name: the journal keeps the two apart so
+  // it can show them as columns, while the log line joins them back together.
+  std::string outcome;
+  bool counted = false;  // counts against the safety breaker
 
   switch (w.response) {
     case Watchdog::Response::Notify:
-      event = exe + ": resource limit reached";
+      outcome = "resource limit reached";
       break;
 
     case Watchdog::Response::LowerPriority: {
       if (HANDLE handle = OpenProcess(PROCESS_SET_INFORMATION, FALSE, p.pid)) {
         const BOOL ok = SetPriorityClass(handle, BELOW_NORMAL_PRIORITY_CLASS);
         CloseHandle(handle);
-        if (ok) event = exe + ": priority lowered";
+        if (ok) outcome = "priority lowered";
       }
       break;
     }
@@ -330,20 +339,20 @@ void RuleEngine::fire_watchdog(const Watchdog& w, const ProcessInfo& p) {
     case Watchdog::Response::Suspend:
       if (!safety_ok()) return;
       if (rules::suspend_process(p.pid)) {
-        note_action();
-        event = exe + ": suspended";
+        counted = true;
+        outcome = "suspended";
       } else {
-        event = exe + ": could not suspend";
+        outcome = "could not suspend";
       }
       break;
 
     case Watchdog::Response::End:
       if (!safety_ok()) return;
       if (rules::end_process(p.pid)) {
-        note_action();
-        event = exe + ": ended";
+        counted = true;
+        outcome = "ended";
       } else {
-        event = exe + ": could not end";
+        outcome = "could not end";
       }
       break;
 
@@ -351,16 +360,16 @@ void RuleEngine::fire_watchdog(const Watchdog& w, const ProcessInfo& p) {
     case Watchdog::Response::DumpFull: {
       if (!safety_ok()) return;
       if (!claim_dump_slot()) {
-        event = exe + ": dump skipped, hourly limit reached";
+        outcome = "dump skipped, hourly limit reached";
         break;
       }
       const bool full = (w.response == Watchdog::Response::DumpFull);
       std::wstring why = L"watchdog: " + p.exe;
       if (platform::write_process_dump(p.pid, full, why.c_str())) {
-        note_action();
-        event = exe + (full ? ": full dump written" : ": minidump written");
+        counted = true;
+        outcome = full ? "complete dump written" : "minidump written";
       } else {
-        event = exe + ": dump failed, process not readable";
+        outcome = "dump failed, process not readable";
       }
       break;
     }
@@ -375,20 +384,49 @@ void RuleEngine::fire_watchdog(const Watchdog& w, const ProcessInfo& p) {
                          nullptr, nullptr, &si, &pi)) {
         CloseHandle(pi.hThread);
         CloseHandle(pi.hProcess);
-        note_action();
-        event = exe + ": launched " + narrow(w.command);
+        counted = true;
+        outcome = "launched " + narrow(w.command);
       } else {
-        event = exe + ": could not launch " + narrow(w.command);
+        outcome = "could not launch " + narrow(w.command);
       }
       break;
     }
   }
 
-  if (!event.empty()) {
-    core::log::info("watchdog: " + event);
+  if (outcome.empty()) return;
+  if (counted) note_action();
+
+  const std::string event = exe + ": " + outcome;
+  core::log::info("watchdog: " + event);
+  {
     std::lock_guard lock(status_mutex_);
     status_.last_event = event;
   }
+  record_event(exe, w.response, outcome);
+}
+
+void RuleEngine::record_event(const std::string& program,
+                              Watchdog::Response response,
+                              const std::string& outcome) {
+  SYSTEMTIME st;
+  GetLocalTime(&st);
+  char time[16];
+  snprintf(time, sizeof(time), "%02u:%02u:%02u", st.wHour, st.wMinute,
+           st.wSecond);
+  events_.add(RuleEvent{time, program, outcome});
+
+  const uint64_t now = GetTickCount64();
+  const bool show =
+      last_balloon_ms_ == 0 || now - last_balloon_ms_ >= kBalloonIntervalMs;
+  if (!show) return;
+  last_balloon_ms_ = now;
+
+  // Anything beyond a plain alert changed something, so it warns rather than
+  // informs. The message is the same line the journal shows.
+  const bool acted = response != Watchdog::Response::Notify &&
+                     response != Watchdog::Response::LowerPriority;
+  const std::wstring body = widen(program + ": " + outcome);
+  platform::tray_balloon(L"PoTaskojo", body.c_str(), acted);
 }
 
 }  // namespace rules
