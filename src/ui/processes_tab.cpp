@@ -134,8 +134,9 @@ void render_processes_tab() {
 
   const ImGuiTableFlags flags =
       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
-      ImGuiTableFlags_ScrollY | ImGuiTableFlags_Resizable |
-      ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable;
+      ImGuiTableFlags_ScrollY | ImGuiTableFlags_ScrollX |
+      ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable |
+      ImGuiTableFlags_Hideable;
 
   const float footer = ImGui::GetFrameHeightWithSpacing();
   if (ImGui::BeginTable("##procs", 7, flags,

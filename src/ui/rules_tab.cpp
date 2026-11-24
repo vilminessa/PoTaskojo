@@ -468,7 +468,8 @@ void render_rules_tab() {
   ImGui::TextDisabled("%zu shown", shown);
 
   const ImGuiTableFlags flags =
-      ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable;
+      ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+      ImGuiTableFlags_ScrollX | ImGuiTableFlags_Resizable;
   if (ImGui::BeginTable("##rules", 5, flags)) {
     ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, dp(45.0f));
     ImGui::TableSetupColumn("Program", ImGuiTableColumnFlags_WidthFixed, dp(190.0f));
@@ -553,6 +554,7 @@ void render_rules_tab() {
     // Newest first, so the top row is the one to read and scrolling is only
     // needed to look further back.
     const ImGuiTableFlags event_flags = ImGuiTableFlags_ScrollY |
+                                        ImGuiTableFlags_ScrollX |
                                         ImGuiTableFlags_RowBg |
                                         ImGuiTableFlags_NoSavedSettings;
     if (ImGui::BeginTable("##events", 3, event_flags, ImVec2(0, dp(150.0f)))) {

@@ -54,7 +54,7 @@ void render_services_tab() {
 
   const ImGuiTableFlags flags =
       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
-      ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable;
+      ImGuiTableFlags_ScrollX | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable;
   if (ImGui::BeginTable("##svcs", 5, flags, ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 0, 0);
@@ -152,7 +152,7 @@ void render_startup_tab() {
 
   const ImGuiTableFlags flags =
       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
-      ImGuiTableFlags_Resizable;
+      ImGuiTableFlags_ScrollX | ImGuiTableFlags_Resizable;
   if (ImGui::BeginTable("##startup", 4, flags, ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("Enabled", ImGuiTableColumnFlags_WidthFixed, dp(70.0f));
@@ -230,7 +230,7 @@ void render_connections_tab() {
 
   const ImGuiTableFlags flags =
       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
-      ImGuiTableFlags_Resizable;
+      ImGuiTableFlags_ScrollX | ImGuiTableFlags_Resizable;
   if (ImGui::BeginTable("##conns", 6, flags, ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("Proto", ImGuiTableColumnFlags_WidthFixed, dp(55.0f));
