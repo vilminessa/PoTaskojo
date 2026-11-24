@@ -55,7 +55,8 @@ bool autorun_set(bool enable) {
     if (RegCreateKeyExW(HKEY_CURRENT_USER, kRunKey, 0, nullptr, 0, KEY_WRITE,
                         nullptr, &key, nullptr) != ERROR_SUCCESS)
       return false;
-    const std::wstring cmd = L"\"" + exe_path() + L"\" --start-minimized";
+    // No extra flags: launch behaviour comes from the settings, not argv.
+    const std::wstring cmd = L"\"" + exe_path() + L"\"";
     const LSTATUS st = RegSetValueExW(
         key, kValueName, 0, REG_SZ,
         reinterpret_cast<const BYTE*>(cmd.c_str()),

@@ -146,7 +146,7 @@ ServiceActionResult service_action(const std::wstring& name, const wchar_t* acti
                                    SERVICE_QUERY_STATUS);
   if (!svc) {
     CloseServiceHandle(scm);
-    res.message = "Could not open service (access denied?)";
+    res.message = "Cannot open that service (access denied?)";
     return res;
   }
 

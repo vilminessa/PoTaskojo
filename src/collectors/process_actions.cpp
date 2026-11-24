@@ -71,7 +71,7 @@ ActionResult execute(const ProcessAction& action) {
         r.ok = true;
         r.message = "Termination requested";
       } else {
-        r.message = "Could not end process (protected or access denied)";
+        r.message = "Cannot end that process (protected, or access denied)";
       }
       break;
     }
@@ -85,7 +85,7 @@ ActionResult execute(const ProcessAction& action) {
         r.ok = true;
         r.message = action.kind == ProcessAction::Suspend ? "Suspended" : "Resumed";
       } else {
-        r.message = "Operation not allowed for this process";
+        r.message = "This process does not allow that operation";
       }
       break;
     }

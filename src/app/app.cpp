@@ -15,9 +15,11 @@
 #include "platform/tray.h"
 #include "rules/rules.h"
 #include "ui/processes_tab.h"
+#include "ui/scale.h"
 #include "ui/settings_dialog.h"
 #include "ui/tabs.h"
 #include "ui/theme.h"
+#include "ui/widgets.h"
 
 #pragma comment(lib, "dwmapi.lib")
 
@@ -29,6 +31,77 @@ namespace app {
 namespace {
 constexpr wchar_t kWindowClass[] = L"PoTaskojoMainWindow";
 constexpr wchar_t kWindowTitle[] = L"PoTaskojo";
+
+// Work area of the monitor the window lives on (falls back to the primary).
+RECT work_area_for(HWND hwnd) {
+  RECT wa{};
+  if (hwnd) {
+    if (HMONITOR mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)) {
+      MONITORINFO mi{};
+      mi.cbSize = sizeof(mi);
+      if (GetMonitorInfoW(mon, &mi)) return mi.rcWork;
+    }
+  }
+  SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
+  return wa;
+}
+
+// Window rect for a client of the given size (adds the non-client frame).
+RECT window_rect_for_client(HWND hwnd, DWORD style, int w, int h) {
+  UINT dpi = 96;
+  if (hwnd) {
+    using GetDpiFn = UINT(WINAPI*)(HWND);
+    if (HMODULE u = GetModuleHandleW(L"user32.dll"))
+      if (auto fn = reinterpret_cast<GetDpiFn>(GetProcAddress(u, "GetDpiForWindow")))
+        dpi = fn(hwnd);
+  }
+  RECT r{0, 0, w, h};
+  bool adjusted = false;
+  if (HMODULE u = GetModuleHandleW(L"user32.dll")) {
+    using AdjustDpiFn = BOOL(WINAPI*)(LPRECT, DWORD, BOOL, DWORD, UINT);
+    if (auto fn = reinterpret_cast<AdjustDpiFn>(
+            GetProcAddress(u, "AdjustWindowRectExForDpi")))
+      adjusted = fn(&r, style, FALSE, 0, dpi) != FALSE;
+  }
+  if (!adjusted) AdjustWindowRectEx(&r, style, FALSE, 0);
+  return r;
+}
+
+// Shrinks a client size so the whole window (frame included) fits |wa|.
+// Clamping the client alone would push the frame off-screen.
+void fit_client_to_work(HWND hwnd, DWORD style, int& w, int& h, const RECT& wa) {
+  const RECT r = window_rect_for_client(hwnd, style, w, h);
+  const int over_w = (r.right - r.left) - (wa.right - wa.left);
+  const int over_h = (r.bottom - r.top) - (wa.bottom - wa.top);
+  if (over_w > 0) w -= over_w;
+  if (over_h > 0) h -= over_h;
+}
+
+// Smallest usable client: navigation rail + the process table's fixed columns
+// + a readable Name column, never larger than the monitor's work area.
+void min_window_size(HWND hwnd, LONG& out_w, LONG& out_h) {
+  const RECT wa = work_area_for(hwnd);
+  int w = static_cast<int>(ui::dp(960.0f));
+  int h = static_cast<int>(ui::dp(480.0f));
+  DWORD style = WS_OVERLAPPEDWINDOW;
+  if (hwnd) style = static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_STYLE));
+  fit_client_to_work(hwnd, style, w, h, wa);
+  out_w = w;
+  out_h = h;
+}
+
+// WM_GETMINMAXINFO tracks the window rect, so the floor has to include the
+// frame as well.
+void min_track_size(HWND hwnd, LONG& out_w, LONG& out_h) {
+  LONG cw = 0, ch = 0;
+  min_window_size(hwnd, cw, ch);
+  DWORD style = WS_OVERLAPPEDWINDOW;
+  if (hwnd) style = static_cast<DWORD>(GetWindowLongPtrW(hwnd, GWL_STYLE));
+  const RECT r = window_rect_for_client(hwnd, style, static_cast<int>(cw),
+                                        static_cast<int>(ch));
+  out_w = r.right - r.left;
+  out_h = r.bottom - r.top;
+}
 }  // namespace
 
 App& App::instance() {
@@ -67,12 +140,37 @@ LRESULT App::wnd_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
         size_dirty_ = true;
         pending_w_ = LOWORD(lparam);
         pending_h_ = HIWORD(lparam);
+        // Remember the size in logical units so it survives a UI scale change.
+        // Skip while maximized: that size must not become the normal size.
+        if (!IsZoomed(hwnd)) {
+          const float s = ui::ui_scale();
+          auto& ws = core::window_state();
+          ws.width = static_cast<int>(pending_w_ / s + 0.5f);
+          ws.height = static_cast<int>(pending_h_ / s + 0.5f);
+        }
       }
       return 0;
     case WM_GETMINMAXINFO: {
       auto* mmi = reinterpret_cast<MINMAXINFO*>(lparam);
-      mmi->ptMinTrackSize.x = 640;
-      mmi->ptMinTrackSize.y = 480;
+      LONG min_w = 0, min_h = 0;
+      min_track_size(hwnd, min_w, min_h);
+      mmi->ptMinTrackSize.x = min_w;
+      mmi->ptMinTrackSize.y = min_h;
+      return 0;
+    }
+    case WM_DPICHANGED: {
+      // Moving to a monitor with a different DPI: adopt the rectangle Windows
+      // suggests and apply the new scale at the start of the next frame (the
+      // font texture must not be replaced mid-frame).
+      ui::set_dpi_scale(static_cast<float>(HIWORD(wparam)) / 96.0f);
+      scale_dirty_ = true;
+      const auto* suggested = reinterpret_cast<const RECT*>(lparam);
+      if (suggested) {
+        SetWindowPos(hwnd, nullptr, suggested->left, suggested->top,
+                     suggested->right - suggested->left,
+                     suggested->bottom - suggested->top,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+      }
       return 0;
     }
     case WM_CLOSE:
@@ -98,7 +196,8 @@ void App::show_from_tray() {
   SetForegroundWindow(hwnd_);
 }
 
-bool App::create_window(HINSTANCE instance, int cmd_show) {  WNDCLASSEXW wc{};
+bool App::create_window(HINSTANCE instance, int cmd_show) {
+  WNDCLASSEXW wc{};
   wc.cbSize = sizeof(wc);
   wc.style = CS_CLASSDC;
   wc.lpfnWndProc = &App::wnd_proc_static;
@@ -111,22 +210,84 @@ bool App::create_window(HINSTANCE instance, int cmd_show) {  WNDCLASSEXW wc{};
   }
 
   const auto& ws = core::window_state();
-  width_ = ws.width;
-  height_ = ws.height;
+
+  // Initial scale from the system DPI; WM_DPICHANGED corrects it if the
+  // window lands on a monitor with a different scale.
+  UINT dpi = 96;
+  if (HMODULE user32 = GetModuleHandleW(L"user32.dll")) {
+    using GetDpiFn = UINT(WINAPI*)();
+    if (auto fn = reinterpret_cast<GetDpiFn>(GetProcAddress(user32, "GetDpiForSystem")))
+      dpi = fn();
+  }
+  ui::set_dpi_scale(static_cast<float>(dpi) / 96.0f);
+  ui::load_from_settings();  // explicit override, needed before sizing below
+
+  // Window/Width and Window/Height are stored in logical (96-DPI) units, so the
+  // window keeps its apparent size when the interface scale changes.
+  width_ = static_cast<int>(ws.width * ui::ui_scale() + 0.5f);
+  height_ = static_cast<int>(ws.height * ui::ui_scale() + 0.5f);
+
+  LONG min_w = 0, min_h = 0;
+  min_window_size(nullptr, min_w, min_h);  // never smaller than the layout needs
+  if (width_ < min_w) width_ = min_w;
+  if (height_ < min_h) height_ = min_h;
 
   DWORD style = WS_OVERLAPPEDWINDOW;
   if (ws.always_on_top) style |= WS_POPUP;  // handled below too
 
-  RECT r{0, 0, width_, height_};
-  AdjustWindowRect(&r, style, FALSE);
+  // The whole window (frame included) has to fit the work area: a client as
+  // wide as the display would push the window's edges off-screen.
+  {
+    const RECT wa = work_area_for(nullptr);
+    fit_client_to_work(nullptr, style, width_, height_, wa);
+    if (width_ < min_w) width_ = min_w;
+    if (height_ < min_h) height_ = min_h;
+  }
 
-  hwnd_ = CreateWindowExW(0, kWindowClass, kWindowTitle, style,
-                          CW_USEDEFAULT, CW_USEDEFAULT, r.right - r.left,
-                          r.bottom - r.top, nullptr, nullptr, instance, this);
+  RECT r{0, 0, width_, height_};
+  using AdjustDpiFn = BOOL(WINAPI*)(LPRECT, DWORD, BOOL, DWORD, UINT);
+  static auto adjust_for_dpi = []() -> AdjustDpiFn {
+    if (HMODULE u = GetModuleHandleW(L"user32.dll"))
+      return reinterpret_cast<AdjustDpiFn>(
+          GetProcAddress(u, "AdjustWindowRectExForDpi"));
+    return nullptr;
+  }();
+  if (adjust_for_dpi)
+    adjust_for_dpi(&r, style, FALSE, 0, dpi);  // dwExStyle = 0 (CreateWindowExW)
+  else
+    AdjustWindowRect(&r, style, FALSE);
+
+  // Place the window inside the work area: CW_USEDEFAULT can leave a window
+  // that is as tall as the work area hanging over the taskbar.
+  int x = CW_USEDEFAULT, y = CW_USEDEFAULT;
+  {
+    const RECT wa = work_area_for(nullptr);
+    const int win_w = r.right - r.left;
+    const int win_h = r.bottom - r.top;
+    x = wa.left + ((wa.right - wa.left) - win_w) / 2;
+    y = wa.top + ((wa.bottom - wa.top) - win_h) / 2;
+    if (x < wa.left) x = wa.left;
+    if (y < wa.top) y = wa.top;
+  }
+
+  hwnd_ = CreateWindowExW(0, kWindowClass, kWindowTitle, style, x, y,
+                          r.right - r.left, r.bottom - r.top, nullptr, nullptr,
+                          instance, this);
   if (!hwnd_) {
     core::log::error("CreateWindowExW failed");
     return false;
   }
+  // Trust the real client size: the OS may have clamped our request.
+  {
+    RECT rc{};
+    if (GetClientRect(hwnd_, &rc)) {
+      width_ = rc.right;
+      height_ = rc.bottom;
+    }
+  }
+  core::log::info("window client = " + std::to_string(width_) + "x" +
+                  std::to_string(height_) + " at scale " +
+                  std::to_string(ui::ui_scale()));
   if (ws.always_on_top) SetWindowPos(hwnd_, HWND_TOPMOST, 0, 0, 0, 0,
                                      SWP_NOMOVE | SWP_NOSIZE);
 
@@ -146,63 +307,114 @@ bool App::init_imgui() {
   io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
   io.ConfigWindowsMoveFromTitleBarOnly = true;
 
-  // Load a Windows font with Cyrillic glyphs (default ImGui font is Latin-only).
-  {
-    const wchar_t* candidates[] = {
-        L"C:\\Windows\\Fonts\\consola.ttf",   // Consolas (monospace)
-        L"C:\\Windows\\Fonts\\segoeui.ttf",   // Segoe UI
-        L"C:\\Windows\\Fonts\\arial.ttf",
-    };
-    bool loaded = false;
-    for (const wchar_t* path : candidates) {
-      if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES) continue;
-      // AddFontFromFileTTF() takes a narrow path; converting a wide path would
-      // be lossy for non-ASCII users, so read the bytes ourselves and hand them
-      // to ImGui (it takes ownership and frees with its allocator).
-      HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr,
-                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-      if (h == INVALID_HANDLE_VALUE) continue;
-      LARGE_INTEGER li{};
-      void* data = nullptr;
-      int bytes = 0;
-      if (GetFileSizeEx(h, &li) && li.QuadPart > 0 && li.QuadPart <= 64 * 1024 * 1024) {
-        bytes = static_cast<int>(li.QuadPart);
-        data = malloc(bytes);
-        if (data) {
-          DWORD got = 0;
-          if (!ReadFile(h, data, static_cast<DWORD>(bytes), &got, nullptr) ||
-              got != static_cast<DWORD>(bytes)) {
-            free(data);
-            data = nullptr;
-          }
-        }
-      }
-      CloseHandle(h);
-      if (!data) continue;
-
-      ImFontConfig cfg;
-      cfg.OversampleH = 2;
-      cfg.OversampleV = 1;
-      cfg.PixelSnapH = true;
-      io.Fonts->AddFontFromMemoryTTF(data, bytes, 15.0f, &cfg,
-                                     io.Fonts->GetGlyphRangesCyrillic());
-      loaded = true;
-      core::log::info("font loaded");
-      break;
-    }
-    if (!loaded) core::log::warn("no TTF font found, using ImGui default");
-  }
-
-  const auto& ws = core::window_state();
-  io.FontGlobalScale = ws.ui_scale;
-
-  ui::init_theme();  // dark/light from settings
-
   if (!ImGui_ImplWin32_Init(hwnd_)) return false;
+
+  // Scale: an explicit user override wins, otherwise follow the monitor.
+  ui::load_from_settings();
+  ui::set_dpi_scale(ImGui_ImplWin32_GetDpiScaleForHwnd(hwnd_));
+
+  if (!load_font_bytes()) core::log::warn("no TTF font found, using ImGui default");
+  apply_ui_scale();
+
   if (!ImGui_ImplDX11_Init(renderer_.device(), renderer_.context())) return false;
   imgui_ready_ = true;
   core::log::info("ImGui initialized (docking)");
   return true;
+}
+
+bool App::load_font_bytes() {
+  const wchar_t* candidates[] = {
+      L"C:\\Windows\\Fonts\\consola.ttf",   // Consolas (monospace)
+      L"C:\\Windows\\Fonts\\segoeui.ttf",   // Segoe UI
+      L"C:\\Windows\\Fonts\\arial.ttf",
+  };
+  for (const wchar_t* path : candidates) {
+    if (GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES) continue;
+    // AddFontFromFileTTF() takes a narrow path; a wide path would be lossy for
+    // non-ASCII users, so cache the bytes and hand ImGui a copy it can own.
+    HANDLE h = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) continue;
+    LARGE_INTEGER li{};
+    bool ok = false;
+    if (GetFileSizeEx(h, &li) && li.QuadPart > 0 && li.QuadPart <= 64 * 1024 * 1024) {
+      font_bytes_.assign(static_cast<size_t>(li.QuadPart), 0);
+      DWORD got = 0;
+      ok = ReadFile(h, font_bytes_.data(), static_cast<DWORD>(font_bytes_.size()),
+                    &got, nullptr) &&
+           got == font_bytes_.size();
+    }
+    CloseHandle(h);
+    if (ok) {
+      core::log::info("font cached (" + std::to_string(font_bytes_.size()) + " bytes)");
+      return true;
+    }
+    font_bytes_.clear();
+  }
+  return false;
+}
+
+void App::apply_ui_scale() {
+  ImGuiIO& io = ImGui::GetIO();
+  const float s = ui::ui_scale();
+
+  // Rebuild the font atlas at the new pixel size so glyphs stay crisp;
+  // FontGlobalScale would only stretch the rasterized texture.
+  const bool device_ready = imgui_ready_;
+  if (device_ready) ImGui_ImplDX11_InvalidateDeviceObjects();
+  io.Fonts->Clear();
+  if (!font_bytes_.empty()) {
+    // ImGui takes ownership and frees with its allocator -> hand it a copy.
+    void* copy = malloc(font_bytes_.size());
+    if (copy) {
+      memcpy(copy, font_bytes_.data(), font_bytes_.size());
+      ImFontConfig cfg;
+      cfg.OversampleH = 2;
+      cfg.OversampleV = 1;
+      cfg.PixelSnapH = true;
+      cfg.FontDataOwnedByAtlas = true;
+      io.Fonts->AddFontFromMemoryTTF(copy, static_cast<int>(font_bytes_.size()),
+                                     15.0f * s, &cfg,
+                                     io.Fonts->GetGlyphRangesCyrillic());
+    }
+  }
+  if (device_ready) ImGui_ImplDX11_CreateDeviceObjects();
+
+  // Theme first (pristine), then ScaleAllSizes inside apply_theme().
+  ui::init_theme();
+  core::log::info("ui scale = " + std::to_string(s) +
+                  " (dpi " + std::to_string(ui::dpi_scale()) + ")");
+}
+
+void App::set_ui_scale_percent(int percent) {
+  // Capture the window's logical size at the scale currently in effect.
+  RECT rc{};
+  if (hwnd_) GetClientRect(hwnd_, &rc);
+  const float old = ui::ui_scale();
+  const float logical_w = (old > 0.0f) ? static_cast<float>(rc.right) / old : 0.0f;
+  const float logical_h = (old > 0.0f) ? static_cast<float>(rc.bottom) / old : 0.0f;
+
+  ui::set_manual_percent(percent);  // persists Window/UIScalePct
+
+  if (hwnd_ && logical_w > 0.0f) {
+    // Same apparent size at the new scale, floored at the layout minimum and
+    // shrunk so the window (frame included) still fits the work area.
+    const float s = ui::ui_scale();
+    LONG min_w = 0, min_h = 0;
+    min_window_size(hwnd_, min_w, min_h);
+    int w = static_cast<int>(logical_w * s + 0.5f);
+    int h = static_cast<int>(logical_h * s + 0.5f);
+    if (w < min_w) w = min_w;
+    if (h < min_h) h = min_h;
+    const DWORD style = static_cast<DWORD>(GetWindowLongPtrW(hwnd_, GWL_STYLE));
+    fit_client_to_work(hwnd_, style, w, h, work_area_for(hwnd_));
+    if (w < min_w) w = min_w;
+    if (h < min_h) h = min_h;
+    SetWindowPos(hwnd_, nullptr, 0, 0, w, h,
+                 SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+  }
+
+  scale_dirty_ = true;  // rebuild font + theme at the start of the next frame
 }
 
 void App::shutdown_imgui() {
@@ -230,26 +442,40 @@ void App::render_nav() {
   ImGui::PopStyleVar(3);
 
   // Left navigation rail.
-  ImGui::BeginChild("##nav", ImVec2(180, 0), ImGuiChildFlags_None,
+  ImGui::BeginChild("##nav", ImVec2(ui::dp(180.0f), 0), ImGuiChildFlags_None,
                     ImGuiWindowFlags_NoScrollbar);
-  ImGui::Dummy(ImVec2(8, 8));
+  ImGui::Dummy(ImVec2(ui::dp(8.0f), ui::dp(8.0f)));
   ImGui::TextDisabled("PoTaskojo");
   ImGui::Separator();
+  const float nav_h = ui::dp(32.0f);
   for (int i = 0; i < static_cast<int>(ui::Tab::Count); ++i) {
     const bool selected = (active_tab_ == i);
-    if (selected) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.35f, 0.55f, 1.0f));
+    if (selected) {
+      ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.35f, 0.55f, 1.0f));
+      ImGui::PushStyleColor(ImGuiCol_ButtonHovered,
+                            ImVec4(0.26f, 0.42f, 0.64f, 1.0f));
+    }
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
     if (ImGui::Button(ui::kTabNames[i].data(),
-                      ImVec2(ImGui::GetContentRegionAvail().x, 32))) {
+                      ImVec2(ImGui::GetContentRegionAvail().x, nav_h))) {
       active_tab_ = i;
     }
-    if (selected) ImGui::PopStyleColor();
+    if (selected) {
+      ImGui::PopStyleColor();
+      ImGui::PopStyleColor();
+      // Accent bar marking the active item.
+      ImGui::GetWindowDrawList()->AddRectFilled(
+          ImVec2(pos.x, pos.y),
+          ImVec2(pos.x + ui::dp(3.0f), pos.y + nav_h),
+          ImGui::GetColorU32(ui::section_color()));
+    }
   }
 
   // Settings at the bottom of the rail.
-  const float bottom_y = ImGui::GetWindowHeight() - 44.0f;
+  const float bottom_y = ImGui::GetWindowHeight() - ui::dp(44.0f);
   ImGui::SetCursorPosY(bottom_y);
   if (ImGui::Button("Settings",
-                    ImVec2(ImGui::GetContentRegionAvail().x, 32))) {
+                    ImVec2(ImGui::GetContentRegionAvail().x, nav_h))) {
     settings_open_ = true;
   }
   ImGui::EndChild();
@@ -258,14 +484,14 @@ void App::render_nav() {
   // Content area.
   ImGui::BeginChild("##content", ImVec2(0, 0), ImGuiChildFlags_None,
                     ImGuiWindowFlags_NoScrollbar);
-  ImGui::Dummy(ImVec2(8, 8));
+  ImGui::Dummy(ImVec2(ui::dp(8.0f), ui::dp(8.0f)));
   render_tab_content();
   ImGui::EndChild();
 
   // Persist tab selection.
   if (active_tab_ != core::window_state().default_tab) {
     core::window_state().default_tab = active_tab_;
-    core::settings::set_int(L"Window", L"DefaultTab", active_tab_);
+    core::settings::set_int(L"Window", L"StartupTab", active_tab_);
   }
 
   ImGui::End();
@@ -279,6 +505,12 @@ void App::render_tab_content() {
 }
 
 void App::render_frame() {
+  // Apply a pending scale change before any draw data exists this frame.
+  if (scale_dirty_) {
+    scale_dirty_ = false;
+    apply_ui_scale();
+  }
+
   if (size_dirty_) {
     size_dirty_ = false;
     renderer_.resize(pending_w_, pending_h_);

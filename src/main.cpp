@@ -11,7 +11,7 @@
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmd_line,
                     int cmd_show) {
-  // Hidden self-test hook: verifies the crash handler writes crash.log +
+  // Hidden self-test hook: verifies the crash handler writes crash-report.log +
   // minidump. Internal --internal-* verb, never documented in the UI.
   if (cmd_line && wcsstr(cmd_line, L"--internal-selftest-crash")) {
     const auto& l = core::paths::get();
@@ -28,7 +28,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmd_line,
       cmd_line && wcsstr(cmd_line, L"--internal-show-settings");
 
   // Task Manager replacement mode (IFEO): when Windows launches us instead of
-  // taskmgr.exe, note it and offer the original Task Manager.
+  // taskmgr.exe, note it and offer the genuine Task Manager.
   const bool ifeo_mode =
       platform::launched_as_taskmgr_replacement(cmd_line);
 

@@ -1,6 +1,6 @@
 #pragma once
-// Crash handling: unhandled-exception filter writing crash.log + minidump,
-// with a message pointing the user at logs\crash.log and the dumps folder.
+// Crash handling: unhandled-exception filter writing crash-report.log + minidump,
+// with a message pointing the user at the log and the dumps directory.
 
 namespace platform {
 

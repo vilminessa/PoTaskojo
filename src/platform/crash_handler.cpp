@@ -25,7 +25,7 @@ std::wstring timestamp_string() {
 }
 
 void append_crash_log(const char* text) {
-  const auto path = core::paths::get().logs_dir / L"crash.log";
+  const auto path = core::paths::get().logs_dir / L"crash-report.log";
   HANDLE h = CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ,
                          nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (h == INVALID_HANDLE_VALUE) return;
@@ -46,10 +46,10 @@ LONG WINAPI unhandled_exception(EXCEPTION_POINTERS* info) {
 
   write_minidump(L"unhandled exception");
 
-  // Show a message like the original, then terminate.
+  // Surface the failure to the user, then terminate.
   MessageBoxW(nullptr,
-              L"PoTaskojo crashed. Check logs\\crash.log and the dumps folder "
-              L"for details.",
+              L"PoTaskojo stopped after an unexpected error. Details are in "
+              L"logs\\crash-report.log and in the dumps directory.",
               L"PoTaskojo", MB_OK | MB_ICONERROR);
   return EXCEPTION_EXECUTE_HANDLER;
 }
@@ -60,9 +60,9 @@ bool write_minidump(const wchar_t* reason) {
   const auto dumps = core::paths::get().dumps_dir;
   CreateDirectoryW(dumps.c_str(), nullptr);
 
-  std::wstring name = L"PoTaskojo_Crash_";
+  std::wstring name = L"PoTaskojo_Fault_";
   name += timestamp_string();
-  name += L"_Mini.dmp";
+  name += L".dmp";
   const auto path = dumps / name;
 
   HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,

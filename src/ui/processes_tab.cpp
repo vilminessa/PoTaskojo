@@ -11,6 +11,7 @@
 #include <imgui.h>
 
 #include "collectors/processes.h"
+#include "ui/scale.h"
 #include "collectors/process_actions.h"
 #include "rules/rules.h"
 
@@ -103,13 +104,13 @@ void render_processes_tab() {
   static std::vector<collectors::ProcessRow> view;
   auto snap = collector().latest();
 
-  // Search box (type-to-search, as in the original).
-  ImGui::SetNextItemWidth(260);
+  // Search box (type-to-filter).
+  ImGui::SetNextItemWidth(dp(260.0f));
   ImGui::InputTextWithHint("##search", "Search... (type to filter)", g_search,
                            sizeof(g_search));
   ImGui::SameLine();
   const auto totals = collector().totals();
-  ImGui::TextDisabled("%u processes", totals.process_count);
+  ImGui::TextDisabled("Processes: %u", totals.process_count);
   ImGui::Separator();
 
   if (!snap) {
@@ -156,13 +157,13 @@ void render_processes_tab() {
   if (ImGui::BeginTable("##procs", 7, flags,
                         ImVec2(0, -footer))) {
     ImGui::TableSetupScrollFreeze(0, 1);
-    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 0, 0);
-    ImGui::TableSetupColumn("PID", ImGuiTableColumnFlags_WidthFixed, 70.0f, 1);
-    ImGui::TableSetupColumn("CPU %", ImGuiTableColumnFlags_WidthFixed, 70.0f, 2);
-    ImGui::TableSetupColumn("Memory", ImGuiTableColumnFlags_WidthFixed, 90.0f, 3);
-    ImGui::TableSetupColumn("I/O", ImGuiTableColumnFlags_WidthFixed, 90.0f, 4);
-    ImGui::TableSetupColumn("Priority", ImGuiTableColumnFlags_WidthFixed, 90.0f, 5);
-    ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch, 0, 6);
+    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 3.0f, 0);
+    ImGui::TableSetupColumn("PID", ImGuiTableColumnFlags_WidthFixed, dp(70.0f), 1);
+    ImGui::TableSetupColumn("CPU %", ImGuiTableColumnFlags_WidthFixed, dp(70.0f), 2);
+    ImGui::TableSetupColumn("Memory", ImGuiTableColumnFlags_WidthFixed, dp(90.0f), 3);
+    ImGui::TableSetupColumn("I/O", ImGuiTableColumnFlags_WidthFixed, dp(90.0f), 4);
+    ImGui::TableSetupColumn("Priority", ImGuiTableColumnFlags_WidthFixed, dp(110.0f), 5);
+    ImGui::TableSetupColumn("Path", ImGuiTableColumnFlags_WidthStretch, 1.0f, 6);
 
     ImGui::TableHeadersRow();
     if (ImGuiTableSortSpecs* sort = ImGui::TableGetSortSpecs()) {

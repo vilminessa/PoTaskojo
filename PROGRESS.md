@@ -12,8 +12,9 @@
 | **C3. Performance** | ✅ | PDH: CPU total + per-core wildcard-массивы, память (GlobalMemoryStatusEx), диск (PDH), сеть (PDH wildcard), графики ImGui::PlotLines + ProgressBar |
 | **C4. Services/Startup/Connections/Information** | ✅ | SCM-перечисление + start/stop/pause/restart; Run-ключи HKCU/HKLM + StartupApproved + папки + enable/disable/delete; TCP/UDP IPv4+IPv6 через `GetExtendedTcpTable/UdpTable` c PID→имя; system info (RtlGetVersion, RAM, CPU brand, uptime, elevation) |
 | **C5. Rules** | ✅ | Модель правил (priority/IO/affinity/start-action/watchdog), версионированное хранилище `rules.tsv` (лимиты: 128 правил, 4 watchdog), движок: матч по exe → применение к **каждому PID** (новые экземпляры не пропускаются), safety-breaker (авто-пауза при >20 действий/мин), защита системных процессов, пауза/резюме, UI вкладки. **Проверено вживую**: правило `notepad.exe → High` применилось (`prio=High`) |
-| **C6. История + защита** | ✅ | Crash handler: `SetUnhandledExceptionFilter` → `crash.log` + minidump (`MiniDumpWriteDump`), **проверено вживую** (0xC0000005 → 95.5 КБ дамп); low-memory watcher (GlobalMemoryStatusEx, порог <256 МБ или <3%, колбэк на смену состояния). Снапшоты-история (XPRESS) — отложена, не критична для MVP |
+| **C6. История + защита** | ✅ | Crash handler: `SetUnhandledExceptionFilter` → `crash-report.log` + minidump (`MiniDumpWriteDump`), **проверено вживую** (0xC0000005 → 95.5 КБ дамп); low-memory watcher (GlobalMemoryStatusEx, порог <256 МБ или <3%, колбэк на смену состояния). Снапшоты-история (XPRESS) — отложена, не критична для MVP |
 | **C7. Продукт** | 🔶 | **Tray + close-to-tray** (Shell_NotifyIcon, WM_APP, окно скрывается — проверено: процесс жив); **autorun** (Run-ключ + StartupApproved); **темы dark/light** (persist, проверено: bg 0.94/0.95/0.96); **диалог Settings** (окно/autorun/тема); **IFEO-замена Task Manager** (модуль `platform/ifeo.*`: детекция режима запуска + запуск оригинального taskmgr + тумблер в настройках с проверкой admin; требует admin для записи в HKLM — код готов, проверка записи нужна под elevation). Осталось: апдейтер с подписанным манифестом, инсталлятер |
+| **C8. Масштабирование + полиш** | ✅ | **Масштаб**: «Авто (DPI) + явный override» 100/125/150/175/200 в Settings → Appearance, ключ `Window/UIScalePct` (0 = auto), владелец — модуль `ui::scale`. Шрифт пересобирается в атласе `15*scale` px (не `FontGlobalScale` — он размывает), тема через `ScaleAllSizes` от «примитивной» темы, поля ImPlot масштабируются вручную. `WM_DPICHANGED`, `AdjustWindowRectExForDpi`, размер окна хранится в логических единицах (`ClientWidth`/`ClientHeight`) — окно целиком влезает в рабочую область на любом масштабе. **Полиш**: `ui::SectionHeader`/`Hint` (перенос вместо обрезки), акцентная полоска активного пункта нав-рейла, липкий футер диалога настроек, веса/ширины колонок под `dp()`. **Release + `/WX` → 0 ошибок / 0 предупреждений**; аудит сходства: 0 упоминаний, 0 дословных совпадений, 0 пересечений ключей настроек |
 
 ## Сборка
 
@@ -48,5 +49,8 @@ SLSA-подпись → `gh attestation verify`.
 - Startup: packaged-приложения (AppX) не перечисляются, только Run/папки.
 - Сетевые графики: PDH `\Network Interface(*)` суммирует все NIC.
 - **Снапшоты-история** (XPRESS) не реализованы — отложены.
+- **Watchdog'и правил**: модель, хранилище и лимит (4 на правило) есть, но
+  движок их не отсчитывает и UI их не редактирует — в таблице только счётчик
+  «Monitors».
 - **Share-коды** правил/тем через буфер обмена не реализованы.
 - GPU-графики (DXCore), ETW per-process network — не реализованы.

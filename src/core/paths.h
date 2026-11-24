@@ -23,7 +23,7 @@ const Layout& get();
 
 // Convenience file paths inside data_dir.
 std::filesystem::path settings_file();  // settings.ini
-std::filesystem::path themes_file();    // themes.json
+std::filesystem::path themes_file();    // theme-pack.json
 std::filesystem::path run_history_file();
 std::filesystem::path history_dir();    // history\
 

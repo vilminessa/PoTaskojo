@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "collectors/performance.h"
+#include "ui/scale.h"
 #include "core/settings.h"
 
 namespace ui {
@@ -278,7 +279,7 @@ void render_chart(const char* id, const char* title,
     stats += rate ? format_rate(st2.now, opts().bits) : format_pct(st2.now);
   }
 
-  const ImVec2 size(-1, 105);
+  const ImVec2 size(-1, dp(105.0f));
   ImPlotFlags pflags = ImPlotFlags_NoTitle;
   if (!has2) pflags |= ImPlotFlags_NoLegend;
 
@@ -386,7 +387,7 @@ void render_performance_tab() {
   }
   {
     const char* unit = o.bits ? "Bits/s" : "Bytes/s";
-    ImGui::SetNextItemWidth(96);
+    ImGui::SetNextItemWidth(dp(96.0f));
     if (ImGui::BeginCombo("##netunit", unit)) {
       if (ImGui::MenuItem("Bytes/s", nullptr, !o.bits)) {
         o.bits = false;
@@ -402,7 +403,7 @@ void render_performance_tab() {
   }
   {
     bool v = o.auto_scale;
-    if (ImGui::Checkbox("Auto-scale", &v)) {
+    if (ImGui::Checkbox("Scale to fit", &v)) {
       o.auto_scale = v;
       persist(L"ChartAutoScale", v);
     }
@@ -439,14 +440,14 @@ void render_performance_tab() {
       ImGui::TextDisabled("Per-core");
       const int cores = static_cast<int>(snap->cpu.per_core.size());
       const float avail = ImGui::GetContentRegionAvail().x;
-      const float cell = std::max(24.0f, (avail - (cores - 1) * 4.0f) / cores);
+      const float cell = std::max(dp(24.0f), (avail - (cores - 1) * dp(4.0f)) / cores);
       for (int i = 0; i < cores; ++i) {
-        if (i > 0) ImGui::SameLine(0, 4);
+        if (i > 0) ImGui::SameLine(0, dp(4.0f));
         ImGui::PushID(i);
         char lbl[16];
         snprintf(lbl, sizeof(lbl), "%d", i);
         const float frac = static_cast<float>(snap->cpu.per_core[static_cast<size_t>(i)] / 100.0);
-        ImGui::ProgressBar(frac, ImVec2(cell, 18), lbl);
+        ImGui::ProgressBar(frac, ImVec2(cell, dp(18.0f)), lbl);
         ImGui::PopID();
       }
     }

@@ -1,5 +1,5 @@
 #pragma once
-// Autorun registration: HKCU Run key + StartupApproved toggle (the standard
+// Autorun registration: current-user Run value + StartupApproved toggle (the standard
 // Windows mechanism for launching an app at user logon).
 
 namespace platform {

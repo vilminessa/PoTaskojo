@@ -247,7 +247,7 @@ bool RuleStore::add(const Rule& r, std::string* error) {
     return false;
   }
   if (r.watchdogs.size() > kMaxWatchdogsPerRule) {
-    if (error) *error = "A rule allows at most four watchdogs.";
+    if (error) *error = "A rule allows at most four monitors.";
     return false;
   }
   rules_.push_back(r);
@@ -266,7 +266,7 @@ bool RuleStore::update(const std::wstring& exe_name, const Rule& r,
     return false;
   }
   if (r.watchdogs.size() > kMaxWatchdogsPerRule) {
-    if (error) *error = "A rule allows at most four watchdogs.";
+    if (error) *error = "A rule allows at most four monitors.";
     return false;
   }
   *it = r;

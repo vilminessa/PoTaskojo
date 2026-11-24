@@ -14,7 +14,7 @@ namespace collectors {
 struct StartupRow {
   std::wstring name;
   std::wstring command;
-  std::wstring location;   // "HKCU Run", "User startup folder", ...
+  std::wstring location;   // "Current user (Run)", "User startup folder", ...
   bool enabled = false;
   bool is_packaged = false;
   std::wstring file_path;  // resolved target (may be empty)

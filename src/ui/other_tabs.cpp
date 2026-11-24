@@ -10,6 +10,7 @@
 #include <imgui.h>
 
 #include "collectors/connections.h"
+#include "ui/scale.h"
 #include "collectors/services.h"
 #include "collectors/startup.h"
 
@@ -51,7 +52,7 @@ void render_services_tab() {
   }
 
   static char search[128] = "";
-  ImGui::SetNextItemWidth(260);
+  ImGui::SetNextItemWidth(dp(260.0f));
   ImGui::InputTextWithHint("##svc_search", "Search...", search, sizeof(search));
   ImGui::SameLine();
   ImGui::TextDisabled("%zu services", snap->rows.size());
@@ -65,10 +66,10 @@ void render_services_tab() {
   if (ImGui::BeginTable("##svcs", 5, flags, ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
     ImGui::TableSetupScrollFreeze(0, 1);
     ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch, 0, 0);
-    ImGui::TableSetupColumn("Display name", ImGuiTableColumnFlags_WidthStretch, 0, 1);
-    ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 90.0f, 2);
-    ImGui::TableSetupColumn("Startup", ImGuiTableColumnFlags_WidthFixed, 100.0f, 3);
-    ImGui::TableSetupColumn("PID", ImGuiTableColumnFlags_WidthFixed, 70.0f, 4);
+    ImGui::TableSetupColumn("Display label", ImGuiTableColumnFlags_WidthStretch, 0, 1);
+    ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, dp(90.0f), 2);
+    ImGui::TableSetupColumn("Startup", ImGuiTableColumnFlags_WidthFixed, dp(100.0f), 3);
+    ImGui::TableSetupColumn("PID", ImGuiTableColumnFlags_WidthFixed, dp(70.0f), 4);
     ImGui::TableHeadersRow();
 
     ImGuiListClipper clipper;
@@ -165,9 +166,9 @@ void render_startup_tab() {
       ImGuiTableFlags_Resizable;
   if (ImGui::BeginTable("##startup", 4, flags, ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
     ImGui::TableSetupScrollFreeze(0, 1);
-    ImGui::TableSetupColumn("Enabled", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+    ImGui::TableSetupColumn("Enabled", ImGuiTableColumnFlags_WidthFixed, dp(70.0f));
     ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("Location", ImGuiTableColumnFlags_WidthFixed, 170.0f);
+    ImGui::TableSetupColumn("Location", ImGuiTableColumnFlags_WidthFixed, dp(170.0f));
     ImGui::TableSetupColumn("Command", ImGuiTableColumnFlags_WidthStretch);
     ImGui::TableHeadersRow();
 
@@ -218,11 +219,12 @@ void render_connections_tab() {
     ImGui::TextDisabled("Collecting connections...");
     return;
   }
-  ImGui::TextDisabled("%zu Total  |  %zu TCP  |  %zu UDP  |  %zu EST  |  %zu LISTEN",
-                      snap->rows.size(), snap->tcp_count, snap->udp_count,
-                      snap->established, snap->listening);
+  ImGui::TextDisabled(
+      "%zu connections: %zu TCP, %zu UDP, %zu established, %zu listening",
+      snap->rows.size(), snap->tcp_count, snap->udp_count, snap->established,
+      snap->listening);
   static char search[128] = "";
-  ImGui::SetNextItemWidth(260);
+  ImGui::SetNextItemWidth(dp(260.0f));
   ImGui::InputTextWithHint("##conn_search", "Search...", search, sizeof(search));
   ImGui::Separator();
 
@@ -231,11 +233,11 @@ void render_connections_tab() {
       ImGuiTableFlags_Resizable;
   if (ImGui::BeginTable("##conns", 6, flags, ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
     ImGui::TableSetupScrollFreeze(0, 1);
-    ImGui::TableSetupColumn("Proto", ImGuiTableColumnFlags_WidthFixed, 55.0f);
-    ImGui::TableSetupColumn("Local address", ImGuiTableColumnFlags_WidthFixed, 180.0f);
-    ImGui::TableSetupColumn("Remote address", ImGuiTableColumnFlags_WidthFixed, 180.0f);
-    ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-    ImGui::TableSetupColumn("PID", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+    ImGui::TableSetupColumn("Proto", ImGuiTableColumnFlags_WidthFixed, dp(55.0f));
+    ImGui::TableSetupColumn("Local endpoint", ImGuiTableColumnFlags_WidthFixed, dp(180.0f));
+    ImGui::TableSetupColumn("Remote endpoint", ImGuiTableColumnFlags_WidthFixed, dp(180.0f));
+    ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, dp(100.0f));
+    ImGui::TableSetupColumn("PID", ImGuiTableColumnFlags_WidthFixed, dp(70.0f));
     ImGui::TableSetupColumn("Process", ImGuiTableColumnFlags_WidthStretch);
     ImGui::TableHeadersRow();
 

@@ -9,6 +9,8 @@
 #include <imgui.h>
 
 #include "rules/rules.h"
+#include "ui/scale.h"
+#include "ui/widgets.h"
 
 namespace ui {
 namespace {
@@ -42,7 +44,7 @@ const char* prio_name(rules::PriorityAction p) {
 const char* start_name(rules::StartAction a) {
   using S = rules::StartAction;
   switch (a) {
-    case S::None: return "Nothing";
+    case S::None: return "Do nothing";
     case S::EndIt: return "Terminate on launch";
     case S::Suspend: return "Suspend on launch";
   }
@@ -63,13 +65,13 @@ const char* wd_metric_name(rules::Watchdog::Metric m) {
 const char* wd_response_name(rules::Watchdog::Response r) {
   using R = rules::Watchdog::Response;
   switch (r) {
-    case R::Notify: return "Notify";
-    case R::DumpMini: return "Mini dump";
-    case R::DumpFull: return "Full dump";
+    case R::Notify: return "Alert";
+    case R::DumpMini: return "Small dump";
+    case R::DumpFull: return "Complete dump";
     case R::LowerPriority: return "Lower priority";
     case R::Suspend: return "Suspend";
     case R::End: return "End";
-    case R::RunCommand: return "Run command";
+    case R::RunCommand: return "Launch program";
   }
   return "?";
 }
@@ -90,7 +92,7 @@ void render_rules_tab() {
   if (paused) {
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.7f, 0.3f, 1.0f));
     ImGui::TextUnformatted(st.paused_reason == 1
-                               ? "PAUSED by safety breaker (too many actions in a minute)"
+                               ? "PAUSED by safety breaker (rate limit: too many actions in one minute)"
                                : "PAUSED by user");
     ImGui::PopStyleColor();
     if (ImGui::SmallButton("Resume rules")) {
@@ -101,9 +103,9 @@ void render_rules_tab() {
     ImGui::TextDisabled("Rules active | applied %u | last: %s",
                         st.applied_count, st.last_event.c_str());
     ImGui::SameLine();
-    if (ImGui::SmallButton("Pause rules")) {
+    if (ImGui::SmallButton("Suspend rules")) {
       RuleEngine::instance().set_paused(true);
-      g_status = "Rules paused; affected programs reverted to their earlier settings.";
+      g_status = "Rules paused; affected programs restored to prior values.";
     }
   }
 
@@ -119,8 +121,8 @@ void render_rules_tab() {
 
   ImGui::Separator();
 
-  // --- Add rule ---
-  ImGui::SetNextItemWidth(260);
+  // --- Create rule ---
+  ImGui::SetNextItemWidth(dp(260.0f));
   ImGui::InputTextWithHint("##new_exe", "Program, e.g. chrome.exe", g_new_exe,
                            sizeof(g_new_exe));
   ImGui::SameLine();
@@ -129,7 +131,7 @@ void render_rules_tab() {
                        !RuleStore::instance().has(
                            std::wstring(g_new_exe, g_new_exe + strlen(g_new_exe)));
   if (!can_add) ImGui::BeginDisabled();
-  if (ImGui::SmallButton("Add rule") && can_add) {
+  if (ImGui::SmallButton("Create rule") && can_add) {
     Rule r;
     r.exe_name = std::wstring(g_new_exe, g_new_exe + strlen(g_new_exe));
     r.priority = PriorityAction::Normal;
@@ -152,19 +154,19 @@ void render_rules_tab() {
   const auto rules_list = RuleStore::instance().all();
   if (rules_list.empty()) {
     ImGui::TextDisabled("No rules defined.");
-    ImGui::TextDisabled(
-        "Add a rule to adjust how a program runs, or to monitor it.");
+    Hint("Set how a matching program runs: priority, launch behaviour, or "
+         "monitors.");
     return;
   }
 
   const ImGuiTableFlags flags =
       ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable;
   if (ImGui::BeginTable("##rules", 5, flags)) {
-    ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 45.0f);
-    ImGui::TableSetupColumn("Program", ImGuiTableColumnFlags_WidthFixed, 190.0f);
-    ImGui::TableSetupColumn("Priority", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+    ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, dp(45.0f));
+    ImGui::TableSetupColumn("Program", ImGuiTableColumnFlags_WidthFixed, dp(190.0f));
+    ImGui::TableSetupColumn("Priority", ImGuiTableColumnFlags_WidthFixed, dp(130.0f));
     ImGui::TableSetupColumn("On start", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("Watchdogs", ImGuiTableColumnFlags_WidthFixed, 90.0f);
+    ImGui::TableSetupColumn("Monitors", ImGuiTableColumnFlags_WidthFixed, dp(90.0f));
     ImGui::TableHeadersRow();
 
     for (size_t i = 0; i < rules_list.size(); ++i) {
@@ -209,10 +211,10 @@ void render_rules_tab() {
 
       // Right-click: full editor dialog.
       if (ImGui::BeginPopupContextItem()) {
-        if (ImGui::MenuItem("Delete rule")) {
+        if (ImGui::MenuItem("Remove rule")) {
           RuleStore::instance().remove(r.exe_name);
           RuleStore::instance().save();
-          g_status = "Rule for " + narrow(r.exe_name) + " deleted";
+          g_status = narrow(r.exe_name) + ": rule removed";
           ImGui::EndPopup();
           ImGui::PopID();
           continue;
@@ -225,9 +227,8 @@ void render_rules_tab() {
   }
 
   ImGui::Spacing();
-  ImGui::TextDisabled(
-      "Rules apply only while PoTaskojo is running. Enable auto-start + tray "
-      "so they keep working after sign-in.");
+  Hint("Rules apply only while PoTaskojo is running. Enable auto-start + tray "
+       "so they keep working after sign-in.");
 }
 
 }  // namespace ui

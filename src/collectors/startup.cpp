@@ -79,7 +79,7 @@ void collect_run_key(HKEY root, const wchar_t* sub, const wchar_t* location,
     r.command = reg_read(root, sub, name);
     r.location = location;
     r.enabled = approved_enabled(root,
-        (std::wstring(location) == L"HKCU Run"
+        (std::wstring(location) == L"Current user (Run)"
              ? L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run"
              : L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run32"),
         name);
@@ -155,14 +155,15 @@ void StartupCollector::thread_main() {
 
 void StartupCollector::collect(StartupSnapshot& out) {
   collect_run_key(HKEY_CURRENT_USER,
-                  L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", L"HKCU Run",
+                  L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", L"Current user (Run)",
                   out.rows);
   collect_run_key(HKEY_LOCAL_MACHINE,
-                  L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", L"HKLM Run",
+                  L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                  L"Local machine (Run)",
                   out.rows);
   collect_run_key(HKEY_LOCAL_MACHINE,
                   L"Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Run",
-                  L"HKLM Run (32-bit view)", out.rows);
+                  L"Local machine (Run, 32-bit)", out.rows);
   collect_folder(FOLDERID_Startup, L"User startup folder", out.rows);
   collect_folder(FOLDERID_CommonStartup, L"Common startup folder", out.rows);
 
@@ -175,7 +176,7 @@ bool StartupCollector::set_enabled(const StartupRow& row, bool enabled) {
   // Folder items: no-op for MVP (deleting/creating .lnk is a later step).
   if (row.location.find(L"folder") != std::wstring::npos) return false;
 
-  const bool hkcu = row.location == L"HKCU Run";
+  const bool hkcu = row.location == L"Current user (Run)";
   HKEY root = hkcu ? HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE;
   std::wstring sub = hkcu
                          ? L"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
@@ -195,7 +196,7 @@ bool StartupCollector::remove(const StartupRow& row) {
     // Delete the shortcut/file.
     return DeleteFileW(row.command.c_str()) != FALSE;
   }
-  const bool hkcu = row.location == L"HKCU Run";
+  const bool hkcu = row.location == L"Current user (Run)";
   HKEY root = hkcu ? HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE;
   std::wstring sub = hkcu
                          ? L"Software\\Microsoft\\Windows\\CurrentVersion\\Run"
