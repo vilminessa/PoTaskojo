@@ -9,30 +9,13 @@
 
 #include "core/log.h"
 #include "core/paths.h"
+#include "core/text.h"
 
 namespace rules {
 namespace {
 
-std::string narrow(const std::wstring& w) {
-  if (w.empty()) return {};
-  const int n = WideCharToMultiByte(CP_UTF8, 0, w.data(),
-                                    static_cast<int>(w.size()),
-                                    nullptr, 0, nullptr, nullptr);
-  std::string s(n, '\0');
-  WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
-                      s.data(), n, nullptr, nullptr);
-  return s;
-}
-
-std::wstring widen(const std::string& s) {
-  if (s.empty()) return {};
-  const int n = MultiByteToWideChar(CP_UTF8, 0, s.data(),
-                                    static_cast<int>(s.size()), nullptr, 0);
-  std::wstring w(n, L'\0');
-  MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()),
-                      w.data(), n);
-  return w;
-}
+using core::text::narrow;
+using core::text::widen;
 
 std::wstring lower(std::wstring s) {
   for (auto& c : s) c = static_cast<wchar_t>(towlower(c));
@@ -73,12 +56,21 @@ std::wstring unescape(const std::string& s) {
   out.reserve(s.size());
   for (size_t i = 0; i < s.size(); ++i) {
     if (s[i] == '\\' && i + 1 < s.size()) {
-      char n = s[++i];
+      const char n = s[++i];
       if (n == 'n') out += '\n';
       else if (n == 'r') out += '\r';
       else if (n == 's') out += ' ';
-      else out += n;
-    } else out += s[i];
+      else if (n == '\\') out += '\\';
+      else {
+        // Unknown escape: keep it exactly as written. Swallowing the
+        // backslash turned a hand-edited "C:\Tools\app.exe" into
+        // "C:Toolsapp.exe" with no way to notice until the rule misfired.
+        out += '\\';
+        out += n;
+      }
+    } else {
+      out += s[i];
+    }
   }
   return widen(out);
 }

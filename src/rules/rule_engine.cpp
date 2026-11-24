@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 #include "core/log.h"
+#include "core/text.h"
 #include "platform/crash_handler.h"
 #include "rules/action_exec.h"
 #include "rules/watchdog_eval.h"
@@ -15,16 +16,7 @@
 namespace rules {
 namespace {
 
-std::string narrow(const std::wstring& w) {
-  if (w.empty()) return {};
-  const int n = WideCharToMultiByte(CP_UTF8, 0, w.data(),
-                                    static_cast<int>(w.size()),
-                                    nullptr, 0, nullptr, nullptr);
-  std::string s(n, '\0');
-  WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
-                      s.data(), n, nullptr, nullptr);
-  return s;
-}
+using core::text::narrow;
 
 // Safety breaker thresholds (spec §5.2).
 constexpr uint32_t kMaxActionsPerMinute = 20;   // end/suspend per rolling minute

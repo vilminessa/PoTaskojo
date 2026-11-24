@@ -69,9 +69,11 @@ add_executable(potaskojo_tests
   tests/test_rule_store.cpp
   tests/test_watchdog.cpp
   tests/test_action_exec.cpp
+  tests/test_text.cpp
   src/core/format.cpp
   src/core/settings.cpp
   src/core/paths.cpp
+  src/core/text.cpp
   src/core/log.cpp
   src/ui/scale.cpp
   src/rules/rule_store.cpp
@@ -93,3 +95,9 @@ if(MSVC)
   endif()
 endif()
 add_test(NAME unit COMMAND potaskojo_tests)
+# Keep the test binary out of the app's own directory: it creates a
+# PoTaskojoData folder next to itself to isolate its file I/O, and that same
+# folder would flip potaskojo.exe into portable mode and silently move the
+# developer's settings out of the profile.
+set_target_properties(potaskojo_tests PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)

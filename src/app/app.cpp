@@ -15,6 +15,7 @@
 #include "platform/tray.h"
 #include "rules/rules.h"
 #include "ui/processes_tab.h"
+#include "ui/rules_tab.h"
 #include "ui/scale.h"
 #include "ui/settings_dialog.h"
 #include "ui/tabs.h"
@@ -552,7 +553,8 @@ void App::render_frame() {
   renderer_.end_frame();
 }
 
-int App::run(HINSTANCE instance, int cmd_show, bool open_settings) {
+int App::run(HINSTANCE instance, int cmd_show, bool open_settings,
+             bool open_rule_editor) {
   instance_ = instance;
   start_ticks_ = GetTickCount64();
   settings_open_ = open_settings;
@@ -561,6 +563,10 @@ int App::run(HINSTANCE instance, int cmd_show, bool open_settings) {
   active_tab_ = core::window_state().default_tab;
   if (active_tab_ < 0 || active_tab_ >= static_cast<int>(ui::Tab::Count))
     active_tab_ = 0;
+  if (open_rule_editor) {
+    active_tab_ = static_cast<int>(ui::Tab::Rules);
+    ui::request_rule_editor_for_first_rule();
+  }
   core::log::info("default tab = " + std::to_string(active_tab_));
   {
     const auto p = core::paths::settings_file();

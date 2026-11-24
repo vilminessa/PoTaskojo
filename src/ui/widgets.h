@@ -9,8 +9,8 @@ namespace ui {
 // Replaces ad-hoc TextDisabled + Separator pairs.
 void SectionHeader(const char* label);
 
-// Wrapped hint text in the muted "disabled" colour (TextDisabled clips
-// instead of wrapping, which overflows at large UI scales).
+// Wrapped hint text in the same muted colour as TextDisabled, which clips
+// instead of wrapping and overflows at large UI scales.
 void Hint(const char* text);
 
 // Accent colour used for section headers (theme-aware via apply_theme).

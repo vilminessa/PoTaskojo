@@ -27,6 +27,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmd_line,
   const bool open_settings =
       cmd_line && wcsstr(cmd_line, L"--internal-show-settings");
 
+  // Open the rule editor at startup (used for visual tests).
+  const bool open_rule_editor =
+      cmd_line && wcsstr(cmd_line, L"--internal-open-rule-editor");
+
   // Task Manager replacement mode (IFEO): when Windows launches us instead of
   // taskmgr.exe, note it and offer the genuine Task Manager.
   const bool ifeo_mode =
@@ -67,6 +71,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmd_line,
     return 0;
   }
 
-  const int rc = app::App::instance().run(instance, cmd_show, open_settings);
+  const int rc =
+      app::App::instance().run(instance, cmd_show, open_settings, open_rule_editor);
   return rc;
 }

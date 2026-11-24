@@ -15,7 +15,8 @@ class App {
  public:
   static App& instance();
 
-  int run(HINSTANCE instance, int cmd_show, bool open_settings = false);
+  int run(HINSTANCE instance, int cmd_show, bool open_settings = false,
+          bool open_rule_editor = false);
 
   // Rebuilds the font atlas at the current ui::ui_scale() and re-applies the
   // scaled theme. Called at startup and from render_frame() when a scale change

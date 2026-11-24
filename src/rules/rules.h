@@ -106,6 +106,19 @@ struct ProcessInfo {
   uint64_t write_bytes = 0;
 };
 
+// Counts derived from the last enumerator of each set. The editor's combo
+// boxes iterate to these, so appending a value extends them automatically;
+// inserting one in the middle silently puts the new value on the shelf.
+inline constexpr int kPriorityActionCount =
+    static_cast<int>(PriorityAction::EfficiencyMode) + 1;
+inline constexpr int kStartActionCount = static_cast<int>(StartAction::Suspend) + 1;
+inline constexpr int kMetricCount =
+    static_cast<int>(Watchdog::Metric::DiskBytesPerSec) + 1;
+inline constexpr int kResponseCount =
+    static_cast<int>(Watchdog::Response::RunCommand) + 1;
+inline constexpr int kFrequencyCount =
+    static_cast<int>(Watchdog::Frequency::Immediately) + 1;
+
 // --- Storage: versioned JSON-ish file in data dir (own format) ---
 class RuleStore {
  public:

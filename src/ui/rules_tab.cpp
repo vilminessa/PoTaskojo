@@ -3,11 +3,14 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <string>
 
 #include <imgui.h>
 
+#include "core/format.h"
+#include "core/text.h"
 #include "rules/rules.h"
 #include "ui/scale.h"
 #include "ui/widgets.h"
@@ -15,16 +18,8 @@
 namespace ui {
 namespace {
 
-std::string narrow(const std::wstring& w) {
-  if (w.empty()) return {};
-  const int n = WideCharToMultiByte(CP_UTF8, 0, w.data(),
-                                    static_cast<int>(w.size()),
-                                    nullptr, 0, nullptr, nullptr);
-  std::string s(n, '\0');
-  WideCharToMultiByte(CP_UTF8, 0, w.data(), static_cast<int>(w.size()),
-                      s.data(), n, nullptr, nullptr);
-  return s;
-}
+using core::text::narrow;
+using core::text::widen;
 
 const char* prio_name(rules::PriorityAction p) {
   using P = rules::PriorityAction;
@@ -75,13 +70,319 @@ const char* wd_response_name(rules::Watchdog::Response r) {
   return "?";
 }
 
+const char* wd_frequency_name(rules::Watchdog::Frequency f) {
+  using F = rules::Watchdog::Frequency;
+  switch (f) {
+    case F::OncePerProcess: return "Once for this process";
+    case F::EveryNMinutes: return "Every N minutes";
+    case F::Immediately: return "Immediately";
+  }
+  return "?";
+}
+
 char g_new_exe[264] = "";
 std::string g_status;
+
+// --- Rule editor --------------------------------------------------------
+
+// How many cores can be offered: SetProcessAffinityMask works inside a single
+// processor group and a group holds at most 64. Beyond that the group-aware
+// API would be needed, so extra cores are simply not listed.
+int core_count() {
+  DWORD n = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+  if (n == 0) n = 1;
+  if (n > 64) n = 64;
+  return static_cast<int>(n);
+}
+
+// Byte thresholds read better as whole numbers; a percentage keeps decimals.
+const char* threshold_format(rules::Watchdog::Metric m) {
+  return m == rules::Watchdog::Metric::CpuPercent ? "%.6g" : "%.0f";
+}
+
+// What the threshold means for the metric it is compared against: the same
+// number reads as a percentage, a size or a rate.
+void threshold_hint(rules::Watchdog::Metric m, double value) {
+  if (m == rules::Watchdog::Metric::MemoryBytes) {
+    const uint64_t bytes = value <= 0 ? 0 : static_cast<uint64_t>(value);
+    ImGui::TextDisabled("(= %s)", core::format::format_bytes(bytes).c_str());
+  } else if (m == rules::Watchdog::Metric::DiskBytesPerSec) {
+    ImGui::TextDisabled("(= %s)",
+                        core::format::format_rate(value, false).c_str());
+  } else {
+    ImGui::TextDisabled("(= %s)", core::format::format_pct(value).c_str());
+  }
+}
+
+// The rule under edit is a copy: Cancel and the window X throw it away and
+// Save is the only thing that reaches the store. The program name is the
+// store's identity, so it is shown rather than edited - renaming a rule means
+// removing one and creating another, which would need its own duplicate check.
+std::wstring g_edit_key;
+rules::Rule g_edit_rule;
+std::string g_edit_error;
+// Commands stay parallel to the monitors: ImGui edits narrow text while the
+// model stores wide, and both lists are rebuilt together when a monitor is
+// added or cut, so an index can never point at the wrong command.
+using CommandBuf = std::array<char, 512>;
+std::vector<CommandBuf> g_edit_cmds;
+bool g_edit_open = false;
+// Set by the internal screenshot flag; consumed on the next frame.
+bool g_editor_pending = false;
+
+void open_editor(const rules::Rule& r) {
+  g_edit_key = r.exe_name;
+  g_edit_rule = r;
+  g_edit_error.clear();
+  g_edit_cmds.clear();
+  g_edit_cmds.resize(r.watchdogs.size());  // zero-filled
+  for (size_t i = 0; i < r.watchdogs.size(); ++i) {
+    const std::string cmd = narrow(r.watchdogs[i].command);
+    CommandBuf& buf = g_edit_cmds[i];
+    for (size_t k = 0; k < cmd.size() && k + 1 < buf.size(); ++k)
+      buf[k] = cmd[k];
+  }
+  g_edit_open = true;
+}
+
+void render_editor() {
+  using namespace rules;
+  if (!g_edit_open) return;
+
+  // Explicit height with a sticky footer, the same shape as the settings
+  // dialog: Save and Cancel stay reachable however tall the rule grows.
+  {
+    const float max_h = ImGui::GetMainViewport()->WorkSize.y - dp(24.0f);
+    float h = dp(620.0f);
+    if (h > max_h) h = max_h;
+    if (h < dp(240.0f)) h = dp(240.0f);
+    ImGui::SetNextWindowSize(ImVec2(dp(560.0f), h), ImGuiCond_Appearing);
+  }
+
+  if (!ImGui::Begin("Change rule", &g_edit_open,
+                    ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoDocking)) {
+    ImGui::End();
+    return;
+  }
+
+  const float footer_h = ImGui::GetFrameHeightWithSpacing();
+  ImGui::BeginChild("##edit_body", ImVec2(0, -footer_h), ImGuiChildFlags_None,
+                    ImGuiWindowFlags_None);
+
+  if (!g_edit_error.empty())
+    ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s",
+                       g_edit_error.c_str());
+
+  ImGui::TextUnformatted(narrow(g_edit_key).c_str());
+  ImGui::Checkbox("Rule is enabled", &g_edit_rule.enabled);
+
+  SectionHeader("Behaviour");
+  ImGui::TextDisabled("Priority");
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(dp(240.0f));
+  if (ImGui::BeginCombo("##priority", prio_name(g_edit_rule.priority))) {
+    for (int p = 0; p < kPriorityActionCount; ++p) {
+      const auto v = static_cast<PriorityAction>(p);
+      if (ImGui::MenuItem(prio_name(v), nullptr, g_edit_rule.priority == v))
+        g_edit_rule.priority = v;
+    }
+    ImGui::EndCombo();
+  }
+  ImGui::TextDisabled("On start");
+  ImGui::SameLine();
+  ImGui::SetNextItemWidth(dp(240.0f));
+  if (ImGui::BeginCombo("##start", start_name(g_edit_rule.start_action))) {
+    for (int s = 0; s < kStartActionCount; ++s) {
+      const auto v = static_cast<StartAction>(s);
+      if (ImGui::MenuItem(start_name(v), nullptr, g_edit_rule.start_action == v))
+        g_edit_rule.start_action = v;
+    }
+    ImGui::EndCombo();
+  }
+
+  SectionHeader("Processor affinity");
+  ImGui::Checkbox("Restrict to a subset of cores",
+                  &g_edit_rule.affinity.enabled);
+  if (g_edit_rule.affinity.enabled) {
+    const int cores = core_count();
+    auto& mask = g_edit_rule.affinity.mask;
+    if (mask.size() != static_cast<size_t>(cores)) {
+      // A mask written on another machine keeps the cores both machines have
+      // and defaults the ones that did not exist there to "on", so a rule never
+      // arrives as "no cores selected".
+      std::vector<uint8_t> next(static_cast<size_t>(cores), 1);
+      const size_t keep = (std::min)(mask.size(), next.size());
+      std::copy(mask.begin(),
+                mask.begin() + static_cast<std::ptrdiff_t>(keep), next.begin());
+      mask = std::move(next);
+    }
+
+    ImGui::Checkbox("Fast cores only",
+                    &g_edit_rule.affinity.performance_cores_only);
+    if (g_edit_rule.affinity.performance_cores_only) {
+      Hint("Uses every core the system puts in the fast class; the rest are "
+           "left out.");
+    } else {
+      ImGui::TextDisabled("Cores");
+      for (int i = 0; i < cores; ++i) {
+        if (i > 0) {
+          if (i % 16 == 0) ImGui::NewLine();
+          else ImGui::SameLine(0, dp(6.0f));
+        }
+        bool on = mask[static_cast<size_t>(i)] != 0;
+        char label[12];
+        snprintf(label, sizeof(label), "%d", i);
+        if (ImGui::Checkbox(label, &on))
+          mask[static_cast<size_t>(i)] = on ? 1 : 0;
+      }
+      if (std::none_of(mask.begin(), mask.end(), [](uint8_t b) { return b != 0; }))
+        Hint("At least one core has to stay selected.");
+    }
+  }
+
+  SectionHeader("Monitors");
+  if (g_edit_rule.watchdogs.empty())
+    Hint("None yet. A monitor watches one metric and reacts when it stays past "
+         "a limit.");
+
+  for (size_t i = 0; i < g_edit_rule.watchdogs.size(); ++i) {
+    auto& w = g_edit_rule.watchdogs[i];
+    ImGui::PushID(static_cast<int>(i));
+    ImGui::Separator();
+
+    ImGui::TextDisabled("Metric");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(dp(150.0f));
+    if (ImGui::BeginCombo("##metric", wd_metric_name(w.metric))) {
+      for (int m = 0; m < kMetricCount; ++m) {
+        const auto v = static_cast<Watchdog::Metric>(m);
+        if (ImGui::MenuItem(wd_metric_name(v), nullptr, w.metric == v))
+          w.metric = v;
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("Response");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(dp(150.0f));
+    if (ImGui::BeginCombo("##response", wd_response_name(w.response))) {
+      for (int r = 0; r < kResponseCount; ++r) {
+        const auto v = static_cast<Watchdog::Response>(r);
+        if (ImGui::MenuItem(wd_response_name(v), nullptr, w.response == v))
+          w.response = v;
+      }
+      ImGui::EndCombo();
+    }
+    ImGui::SameLine(0, dp(8.0f));
+    if (ImGui::SmallButton("Remove")) {
+      g_edit_rule.watchdogs.erase(g_edit_rule.watchdogs.begin() +
+                                  static_cast<std::ptrdiff_t>(i));
+      g_edit_cmds.erase(g_edit_cmds.begin() + static_cast<std::ptrdiff_t>(i));
+      ImGui::PopID();
+      break;
+    }
+
+    ImGui::TextDisabled("Above");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(dp(120.0f));
+    ImGui::InputDouble("##threshold", &w.threshold, 0.0, 0.0,
+                       threshold_format(w.metric));
+    ImGui::SameLine();
+    threshold_hint(w.metric, w.threshold);
+    ImGui::SameLine();
+    ImGui::TextDisabled("for");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(dp(70.0f));
+    ImGui::InputScalar("##sustain", ImGuiDataType_U32, &w.sustain_seconds);
+    ImGui::SameLine();
+    ImGui::TextDisabled("seconds");
+
+    ImGui::TextDisabled("Repeat");
+    ImGui::SameLine();
+    // Wide enough for "Once for this process", the longest of the three labels.
+    ImGui::SetNextItemWidth(dp(210.0f));
+    if (ImGui::BeginCombo("##freq", wd_frequency_name(w.frequency))) {
+      for (int f = 0; f < kFrequencyCount; ++f) {
+        const auto v = static_cast<Watchdog::Frequency>(f);
+        if (ImGui::MenuItem(wd_frequency_name(v), nullptr, w.frequency == v))
+          w.frequency = v;
+      }
+      ImGui::EndCombo();
+    }
+    if (w.frequency == Watchdog::Frequency::EveryNMinutes) {
+      ImGui::SameLine();
+      ImGui::TextDisabled("every");
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(dp(70.0f));
+      ImGui::InputScalar("##every", ImGuiDataType_U32, &w.every_n_minutes);
+      ImGui::SameLine();
+      ImGui::TextDisabled("minutes");
+    }
+
+    if (w.response == Watchdog::Response::RunCommand) {
+      ImGui::TextDisabled("Command");
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(-1);
+      if (i < g_edit_cmds.size() &&
+          ImGui::InputText("##cmd", g_edit_cmds[i].data(), g_edit_cmds[i].size()))
+        w.command = widen(g_edit_cmds[i].data());
+    }
+
+    ImGui::PopID();
+  }
+
+  if (g_edit_rule.watchdogs.size() < kMaxWatchdogsPerRule) {
+    if (ImGui::SmallButton("Add monitor")) {
+      g_edit_rule.watchdogs.push_back(Watchdog{});
+      g_edit_cmds.push_back({});
+    }
+  } else {
+    ImGui::TextDisabled("A rule can hold %zu monitors.", kMaxWatchdogsPerRule);
+  }
+
+  ImGui::EndChild();
+
+  ImGui::Spacing();
+  ImGui::Separator();
+  if (ImGui::Button("Save", ImVec2(dp(120.0f), 0))) {
+    for (size_t i = 0; i < g_edit_rule.watchdogs.size(); ++i) {
+      if (i < g_edit_cmds.size())
+        g_edit_rule.watchdogs[i].command = widen(g_edit_cmds[i].data());
+    }
+    std::string err;
+    if (RuleStore::instance().update(g_edit_key, g_edit_rule, &err)) {
+      RuleStore::instance().save();
+      g_status = narrow(g_edit_key) + ": rule saved";
+      g_edit_open = false;
+    } else {
+      g_edit_error = err;
+    }
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Cancel", ImVec2(dp(120.0f), 0))) g_edit_open = false;
+  ImGui::SameLine(0, dp(40.0f));
+  if (ImGui::Button("Remove", ImVec2(dp(120.0f), 0))) {
+    RuleStore::instance().remove(g_edit_key);
+    RuleStore::instance().save();
+    g_status = narrow(g_edit_key) + ": rule removed";
+    g_edit_open = false;
+  }
+
+  ImGui::End();
+}
 
 }  // namespace
 
 void render_rules_tab() {
   using namespace rules;
+
+  // Internal flag: jump straight to the first rule's editor. Nothing is seeded
+  // into the store - with no rules there is simply nothing to show.
+  if (g_editor_pending) {
+    g_editor_pending = false;
+    const auto list = RuleStore::instance().all();
+    if (!list.empty()) open_editor(list[0]);
+  }
 
   const bool newer = RuleStore::instance().format_from_newer_version();
   const auto st = RuleEngine::instance().status();
@@ -155,6 +456,7 @@ void render_rules_tab() {
     ImGui::TextDisabled("No rules defined.");
     Hint("Set how a matching program runs: priority, launch behaviour, or "
          "monitors.");
+    render_editor();
     return;
   }
 
@@ -210,6 +512,12 @@ void render_rules_tab() {
 
       // Right-click: full editor dialog.
       if (ImGui::BeginPopupContextItem()) {
+        if (ImGui::MenuItem("Change rule")) {
+          open_editor(r);
+          ImGui::EndPopup();
+          ImGui::PopID();
+          continue;
+        }
         if (ImGui::MenuItem("Remove rule")) {
           RuleStore::instance().remove(r.exe_name);
           RuleStore::instance().save();
@@ -228,6 +536,10 @@ void render_rules_tab() {
   ImGui::Spacing();
   Hint("Rules apply only while PoTaskojo is running. Enable auto-start + tray "
        "so they keep working after sign-in.");
+
+  render_editor();
 }
+
+void request_rule_editor_for_first_rule() { g_editor_pending = true; }
 
 }  // namespace ui

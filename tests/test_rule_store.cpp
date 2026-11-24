@@ -169,6 +169,28 @@ TEST_CASE(rule_store_enforces_the_monitor_limit) {
   CHECK_EQ(store().all()[0].watchdogs.size(), rules::kMaxWatchdogsPerRule);
 }
 
+TEST_CASE(rule_store_reads_a_hand_written_command) {
+  // Editing rules.tsv by hand is a supported way to use the file, and the
+  // editor never sees it: an unrecognised escape has to survive instead of
+  // swallowing the backslash out of a path.
+  start_empty();
+  std::ofstream out(rules_path(), std::ios::binary | std::ios::trunc);
+  out << "TSRULES 2\n"
+         "rule 1 demo.exe\n"
+         "prio 3 io 0 start 0\n"
+         "aff 0 0\n"
+         "wd 0 90 10 6 0 5 C:\\Tools\\app.exe --once\n"
+         "end\n";
+  out.close();
+
+  CHECK(store().load());
+  const auto all = store().all();
+  CHECK_EQ(all.size(), static_cast<size_t>(1));
+  if (all.empty() || all[0].watchdogs.empty()) return;
+  CHECK_EQ(all[0].watchdogs[0].command,
+           std::wstring(L"C:\\Tools\\app.exe --once"));
+}
+
 TEST_CASE(rule_store_round_trips_every_field_through_the_file) {
   start_empty();
   rules::Rule r;
