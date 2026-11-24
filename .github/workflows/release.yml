@@ -20,6 +20,16 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Публичный репозиторий не должен содержать названий чужих проектов -
+      # ни в исходниках, ни в документации, ни в конфигурации.
+      - name: Нет посторонних упоминаний
+        shell: bash
+        run: |
+          if git grep -n -I -i -E 'task[[:space:]]?slinger' -- .; then
+            echo "::error::найдены запрещённые упоминания (см. строки выше)"
+            exit 1
+          fi
+          echo "упоминаний нет"
       - name: Configure (warnings as errors)
         run: cmake -B build -A x64 -DPOTASKOJO_WERROR=ON
       - name: Build Release
