@@ -13,6 +13,7 @@
 #include "update/update_crypto.h"
 #include "update/update_format.h"
 #include "update/update_install.h"
+#include "update/update_schedule.h"
 #include "test_support.h"
 
 namespace {
@@ -125,6 +126,26 @@ TEST_CASE(update_version_ordering_is_numeric_not_lexical) {
   CHECK(!update::is_newer("0.0.10", "0.0.9"));
   CHECK(!update::is_newer("2.0.0", "1.0.0"));
   CHECK(!update::is_newer("0.0.6", "0.0.6"));
+}
+
+TEST_CASE(update_check_gate_runs_once_a_day) {
+  using update::schedule::kIntervalSeconds;
+  const long long now = 1800000000LL;
+
+  // Never checked: worth doing immediately, whatever the clock says.
+  CHECK(update::schedule::should_check(now, 0));
+  CHECK(update::schedule::should_check(now, -1));
+
+  // Just short of a day: hold off, so a program restarted often still asks
+  // the network only once a day.
+  CHECK(!update::schedule::should_check(now, now - kIntervalSeconds + 1));
+  CHECK(!update::schedule::should_check(now, now));
+  CHECK(update::schedule::should_check(now, now - kIntervalSeconds));
+  CHECK(update::schedule::should_check(now, now - kIntervalSeconds - 1));
+
+  // A clock that ran backwards must not lock the check out until the
+  // difference is made up - that would mean never checking again.
+  CHECK(update::schedule::should_check(now - 500, now));
 }
 
 TEST_CASE(update_swap_target_is_beside_the_running_image) {

@@ -12,6 +12,9 @@ $ErrorActionPreference = "Stop"
 
 if (-not $OutDir) { $OutDir = (Resolve-Path (Join-Path $PSScriptRoot "..\docs\screenshots")).Path }
 $exe = (Resolve-Path (Join-Path $PSScriptRoot "..\build\Release\potaskojo.exe")).Path
+# Tell the program this is a scripted run: the daily update check must not pop
+# a dialog over a frame that is about to be captured.
+$env:POTASKOJO_SCRIPTED = "1"
 $ini = Join-Path $env:LOCALAPPDATA "PoTaskojo\settings.ini"
 $rules = Join-Path $env:LOCALAPPDATA "PoTaskojo\rules.tsv"
 $rulesBackup = "$rules.bak-shot"

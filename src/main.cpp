@@ -9,6 +9,7 @@
 #include "platform/low_memory.h"
 #include "platform/single_instance.h"
 #include "update/update_install.h"
+#include "update/update_schedule.h"
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmd_line,
                     int cmd_show) {
@@ -31,6 +32,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR cmd_line,
   // Open the rule editor at startup (used for visual tests).
   const bool open_rule_editor =
       cmd_line && wcsstr(cmd_line, L"--internal-open-rule-editor");
+
+  // A harness that starts the program must not have a dialog appear over the
+  // frame it is about to capture, so the daily update check stays quiet for
+  // scripted runs - whether they are flagged or signalled by the environment.
+  if (open_settings || open_rule_editor ||
+      GetEnvironmentVariableW(L"POTASKOJO_SCRIPTED", nullptr, 0) > 0) {
+    update::schedule::set_scripted(true);
+  }
 
   // Task Manager replacement mode (IFEO): when Windows launches us instead of
   // taskmgr.exe, note it and offer the genuine Task Manager.

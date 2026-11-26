@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "core/settings.h"
+#include "core/log.h"
 #include "core/window_state.h"
 #include "platform/autorun.h"
 #include "platform/ifeo.h"
@@ -19,6 +20,7 @@
 #include "app/app.h"
 #include "update/update_check.h"
 #include "update/update_install.h"
+#include "update/update_schedule.h"
 
 namespace ui {
 namespace {
@@ -63,6 +65,71 @@ UpdateState& update_state() {
   return *state;
 }
 
+// Runs one check on a worker thread. The button and the daily automatic attempt
+// both come through here, so the two can never race into a second request.
+//
+// |automatic| decides what a negative answer is worth: a person who pressed the
+// button asked a question and gets the reply, while a check nobody asked for
+// only earns a dialog when there is actually something to install.
+void begin_update_check(bool automatic) {
+  UpdateState& st = update_state();
+  {
+    std::lock_guard<std::mutex> lock(st.mutex);
+    st.error.clear();
+  }
+  // Stamped as the request leaves. A network that happens to be down at startup
+  // would otherwise be retried on every launch instead of once a day.
+  update::schedule::mark_checked();
+  st.phase.store(UpdatePhase::Checking);
+
+  std::thread([automatic] {
+    update::CheckResult found = update::check_for_updates(POTASKOJO_VERSION);
+    UpdateState& s = update_state();
+    const bool worth_showing = automatic ? (found.ok && found.newer) : true;
+    {
+      std::lock_guard<std::mutex> lock(s.mutex);
+      s.result = std::move(found);
+    }
+    if (worth_showing) {
+      s.show_dialog.store(true);
+      s.phase.store(UpdatePhase::Ready);
+    } else {
+      // Nothing a person needs to hear about. Going back to Idle keeps the
+      // button available instead of stranding the section on "ready".
+      s.phase.store(UpdatePhase::Idle);
+    }
+
+    std::lock_guard<std::mutex> lock(s.mutex);
+    const update::CheckResult& r = s.result;
+    if (!r.ok)
+      core::log::warn("update check failed: " + r.error);
+    else if (r.newer)
+      core::log::info("update check: version " + r.manifest.version +
+                      " is available");
+    else
+      core::log::info("update check: no newer build");
+  }).detach();
+}
+
+// At most one automatic attempt per process, and at most one a day across
+// processes. A failure stays in the log rather than in a dialog: being unable
+// to reach the network while starting up is not worth interrupting anyone for,
+// and it would otherwise recur every day.
+void maybe_auto_check() {
+  static bool attempted = false;
+  if (attempted) return;
+  attempted = true;
+
+  UpdateState& st = update_state();
+  if (st.phase.load() != UpdatePhase::Idle) return;
+  if (update::schedule::is_scripted()) return;
+  const long long now = update::schedule::now_utc_seconds();
+  if (!update::schedule::should_check(now, update::schedule::last_check_utc()))
+    return;
+
+  begin_update_check(true);
+}
+
 }  // namespace
 
 void render_settings_dialog(bool* open) {
@@ -72,6 +139,10 @@ void render_settings_dialog(bool* open) {
     update_state().phase.store(UpdatePhase::Idle);
     PostQuitMessage(0);
   }
+
+  // Runs before the open check: the daily attempt belongs to the process, not
+  // to whether the dialog happens to be on screen this frame.
+  maybe_auto_check();
 
   if (!*open) return;
 
@@ -197,21 +268,7 @@ void render_settings_dialog(bool* open) {
     } else if (phase == UpdatePhase::Ready || phase == UpdatePhase::Installed) {
       ImGui::TextDisabled("An update is ready.");
     } else if (ImGui::Button("Check for updates")) {
-      {
-        std::lock_guard<std::mutex> lock(st.mutex);
-        st.error.clear();
-      }
-      st.phase.store(UpdatePhase::Checking);
-      std::thread([] {
-        update::CheckResult found = update::check_for_updates(POTASKOJO_VERSION);
-        UpdateState& s = update_state();
-        {
-          std::lock_guard<std::mutex> lock(s.mutex);
-          s.result = std::move(found);
-        }
-        s.show_dialog.store(true);
-        s.phase.store(UpdatePhase::Ready);
-      }).detach();
+      begin_update_check(false);
     }
 
     if (st.show_dialog.exchange(false)) ImGui::OpenPopup("Update");

@@ -99,6 +99,7 @@ add_executable(potaskojo_tests
   src/update/update_crypto.cpp
   src/update/update_check.cpp
   src/update/update_install.cpp
+  src/update/update_schedule.cpp
 )
 target_include_directories(potaskojo_tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src
