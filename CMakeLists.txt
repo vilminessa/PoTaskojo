@@ -81,12 +81,14 @@ add_executable(potaskojo_tests
   tests/test_event_log.cpp
   tests/test_text.cpp
   tests/test_update.cpp
+  tests/test_chart_time.cpp
   src/core/format.cpp
   src/core/settings.cpp
   src/core/paths.cpp
   src/core/text.cpp
   src/core/log.cpp
   src/ui/scale.cpp
+  src/ui/chart_time.cpp
   src/rules/rule_store.cpp
   src/rules/watchdog_eval.cpp
   src/rules/action_exec.cpp

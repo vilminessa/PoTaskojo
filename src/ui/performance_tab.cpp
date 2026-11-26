@@ -9,7 +9,10 @@
 #include <string>
 #include <vector>
 
+#include <windows.h>
+
 #include "collectors/performance.h"
+#include "ui/chart_time.h"
 #include "ui/scale.h"
 #include "core/settings.h"
 #include "core/format.h"
@@ -27,14 +30,25 @@ collectors::PerfCollector& perf() {
   return c;
 }
 
-// Rolling history: 600 samples at 1 s = 10 minutes.
-constexpr size_t kHistory = 600;
-constexpr double kIntervalSec = 1.0;
+// Memory safety valve only: the age window is what decides how much history is
+// kept, and it normally holds about six hundred samples. This bounds the
+// allocation if the sample interval is ever set well below the one second this
+// tab assumes.
+constexpr size_t kHistory = 1000;
+
+struct Sample {
+  long long ms;  // GetTickCount64 at the moment the sample was taken
+  double v;
+};
 
 struct Series {
-  std::deque<double> v;
-  void push(double x) {
-    v.push_back(x);
+  std::deque<Sample> v;
+  void push(long long ms, double value) {
+    v.push_back({ms, value});
+    // Age first: ten minutes of real time, not ten minutes' worth of whatever
+    // count the sampling rate happens to produce.
+    while (v.size() > 1 && !chart_time::inside_window(ms, v.front().ms))
+      v.pop_front();
     while (v.size() > kHistory) v.pop_front();
   }
 };
@@ -82,19 +96,33 @@ struct Stats {
   double now = 0, peak = 0, avg = 0, minv = 0;
 };
 
-Stats stats_of(const std::deque<double>& d) {
+Stats stats_of(const std::deque<Sample>& d) {
   Stats s;
   if (d.empty()) return s;
-  s.now = d.back();
-  s.peak = s.minv = d.front();
+  s.now = d.back().v;
+  s.peak = s.minv = d.front().v;
   double sum = 0.0;
-  for (double x : d) {
-    if (x > s.peak) s.peak = x;
-    if (x < s.minv) s.minv = x;
-    sum += x;
+  for (const Sample& x : d) {
+    if (x.v > s.peak) s.peak = x.v;
+    if (x.v < s.minv) s.minv = x.v;
+    sum += x.v;
   }
   s.avg = sum / static_cast<double>(d.size());
   return s;
+}
+
+double mem_pct_of(const collectors::PerfSnapshot& s) {
+  return s.memory.total_bytes
+             ? 100.0 * static_cast<double>(s.memory.used_bytes) /
+                   static_cast<double>(s.memory.total_bytes)
+             : 0.0;
+}
+
+double swap_pct_of(const collectors::PerfSnapshot& s) {
+  return s.memory.swap_total_bytes
+             ? 100.0 * static_cast<double>(s.memory.swap_used_bytes) /
+                   static_cast<double>(s.memory.swap_total_bytes)
+             : 0.0;
 }
 
 // --- Y axis formatting for byte rates ---
@@ -127,37 +155,6 @@ double pick_div(double max_bps, bool bits, bool auto_scale) {
   return base * base * base;
 }
 
-// --- X (time) axis: ticks labelled -10m ... now ---
-
-void compute_time_ticks(int count, std::vector<double>& pos,
-                        std::vector<std::string>& labels,
-                        std::vector<const char*>& ptrs) {
-  const double span = count > 1 ? (count - 1) * kIntervalSec : 1.0;
-  static const double kSteps[] = {10, 15, 30, 60, 120, 300, 600, 1800, 3600};
-  double step = kSteps[8];
-  for (double s : kSteps) {
-    if (span / s <= 6.0) {
-      step = s;
-      break;
-    }
-  }
-  for (double t = 0.0; t >= -span - 1e-9; t -= step) {
-    pos.push_back(t);
-    char b[32];
-    if (t >= -1e-9) {
-      snprintf(b, sizeof(b), "now");
-    } else {
-      const int sec = static_cast<int>(-t + 0.5);
-      if (sec % 60 == 0) snprintf(b, sizeof(b), "-%dm", sec / 60);
-      else snprintf(b, sizeof(b), "-%ds", sec);
-    }
-    labels.push_back(b);
-  }
-  // Take c_str() only after all pushes, so no pointer is invalidated.
-  ptrs.reserve(labels.size());
-  for (const auto& s : labels) ptrs.push_back(s.c_str());
-}
-
 // EMA smoothing in place.
 void smooth_inplace(std::vector<float>& v, float alpha) {
   if (v.empty()) return;
@@ -173,7 +170,8 @@ void smooth_inplace(std::vector<float>& v, float alpha) {
 void render_chart(const char* id, const char* title,
                   const Series& s1, const char* label1, const ImVec4& col1,
                   const Series* s2, const char* label2, const ImVec4& col2,
-                  bool percent, bool rate, const char* headline) {
+                  bool percent, bool rate, const char* headline,
+                  long long now_ms) {
   const int n = static_cast<int>(s1.v.size());
   if (n < 2) {
     ImGui::TextDisabled("%s: collecting...", title);
@@ -189,18 +187,25 @@ void render_chart(const char* id, const char* title,
     ImGui::Text("%s", headline);
   }
 
+  // X is the real age of each sample, so the axis stays honest if the
+  // collector drifts, pauses, or the machine wakes from sleep.
+  const double span_sec =
+      static_cast<double>(now_ms - s1.v.front().ms) / 1000.0;
+
   // Data buffers (must outlive EndPlot).
   std::vector<float> xs(n), y1(n);
   std::vector<float> y2;
   for (int i = 0; i < n; ++i) {
-    xs[i] = static_cast<float>(-(n - 1 - i)) * static_cast<float>(kIntervalSec);
-    y1[i] = static_cast<float>(s1.v[static_cast<size_t>(i)]);
+    const Sample& s = s1.v[static_cast<size_t>(i)];
+    xs[i] = static_cast<float>(-(now_ms - s.ms)) / 1000.0f;
+    y1[i] = static_cast<float>(s.v);
   }
   const bool has2 = s2 && static_cast<int>(s2->v.size()) == n;
   if (has2) {
     y2.resize(static_cast<size_t>(n));
     for (int i = 0; i < n; ++i)
-      y2[static_cast<size_t>(i)] = static_cast<float>(s2->v[static_cast<size_t>(i)]);
+      y2[static_cast<size_t>(i)] =
+          static_cast<float>(s2->v[static_cast<size_t>(i)].v);
   }
 
   if (opts().smooth) {
@@ -222,10 +227,8 @@ void render_chart(const char* id, const char* title,
                      opts().bits};
 
   // Time ticks (labels must outlive EndPlot).
-  std::vector<double> xticks;
-  std::vector<std::string> xtick_labels;
-  std::vector<const char*> xtick_ptrs;
-  compute_time_ticks(n, xticks, xtick_labels, xtick_ptrs);
+  const chart_time::TimeTicks ticks =
+      chart_time::compute_time_ticks(span_sec);
 
   // Stats line under the plot.
   const Stats st = stats_of(s1.v);
@@ -269,11 +272,10 @@ void render_chart(const char* id, const char* title,
       ImPlot::SetupAxisTicks(ImAxis_Y1, rate_ticks, 3, nullptr, false);
     }
 
-    ImPlot::SetupAxisLimits(ImAxis_X1, -static_cast<double>(n - 1) * kIntervalSec,
-                            0.0, ImPlotCond_Always);
-    ImPlot::SetupAxisTicks(ImAxis_X1, xticks.data(),
-                           static_cast<int>(xticks.size()), xtick_ptrs.data(),
-                           false);
+    ImPlot::SetupAxisLimits(ImAxis_X1, -span_sec, 0.0, ImPlotCond_Always);
+    ImPlot::SetupAxisTicks(ImAxis_X1, ticks.pos.data(),
+                           static_cast<int>(ticks.pos.size()),
+                           ticks.ptrs.data(), false);
     ImPlot::SetupAxisLimits(ImAxis_Y1, 0.0, ymax, ImPlotCond_Always);
 
     ImPlotSpec spec1;
@@ -299,6 +301,25 @@ void render_chart(const char* id, const char* title,
 
 }  // namespace
 
+void performance_ingest() {
+  static uint64_t last_seq = 0;
+  auto snap = perf().latest();
+  // Same shape as the rules feed in App::render_frame: one record per sample,
+  // never per frame, and independent of which tab is on screen.
+  if (!snap || snap->seq == last_seq) return;
+  last_seq = snap->seq;
+
+  const long long ms = static_cast<long long>(snap->taken_ms);
+  g_cpu.push(ms, snap->cpu.total_percent);
+  g_cpu_kern.push(ms, snap->cpu.kernel_percent);
+  g_mem.push(ms, mem_pct_of(*snap));
+  g_swap.push(ms, swap_pct_of(*snap));
+  g_disk_r.push(ms, static_cast<double>(snap->disk.read_bytes_s));
+  g_disk_w.push(ms, static_cast<double>(snap->disk.write_bytes_s));
+  g_net_s.push(ms, static_cast<double>(snap->net.bytes_sent_s));
+  g_net_r.push(ms, static_cast<double>(snap->net.bytes_recv_s));
+}
+
 void render_performance_tab() {
   auto snap = perf().latest();
   if (!snap) {
@@ -306,28 +327,15 @@ void render_performance_tab() {
     return;
   }
 
-  const double mem_pct =
-      snap->memory.total_bytes
-          ? 100.0 * static_cast<double>(snap->memory.used_bytes) /
-                static_cast<double>(snap->memory.total_bytes)
-          : 0.0;
-  const double swap_pct =
-      snap->memory.swap_total_bytes
-          ? 100.0 * static_cast<double>(snap->memory.swap_used_bytes) /
-                static_cast<double>(snap->memory.swap_total_bytes)
-          : 0.0;
+  // One clock for every chart in this frame, so they share the same x mapping.
+  const long long now_ms = static_cast<long long>(GetTickCount64());
   const double disk_total = static_cast<double>(snap->disk.read_bytes_s +
                                                 snap->disk.write_bytes_s);
-
-  // Always record history so charts stay continuous when re-enabled.
-  g_cpu.push(snap->cpu.total_percent);
-  g_cpu_kern.push(snap->cpu.kernel_percent);
-  g_mem.push(mem_pct);
-  g_swap.push(swap_pct);
-  g_disk_r.push(static_cast<double>(snap->disk.read_bytes_s));
-  g_disk_w.push(static_cast<double>(snap->disk.write_bytes_s));
-  g_net_s.push(static_cast<double>(snap->net.bytes_sent_s));
-  g_net_r.push(static_cast<double>(snap->net.bytes_recv_s));
+  // The status line reports the window in minutes and seconds; computed from
+  // real timestamps it finally means what it says.
+  int span_s = 0;
+  if (!g_cpu.v.empty())
+    span_s = static_cast<int>((now_ms - g_cpu.v.front().ms) / 1000);
 
   auto& o = opts();
 
@@ -393,13 +401,11 @@ void render_performance_tab() {
   const ImVec4 kSend(0.90f, 0.50f, 0.90f, 1.0f);
   const ImVec4 kRecv(0.40f, 0.80f, 0.95f, 1.0f);
 
-  const int span_s =
-      static_cast<int>((g_cpu.v.size() > 1 ? g_cpu.v.size() - 1 : 0) *
-                       kIntervalSec);
-
   if (o.show_cpu) {
     render_chart("cpu", "CPU", g_cpu, "Total", kCpu, &g_cpu_kern, "Kernel",
-                 kKern, true, false, core::format::format_pct(snap->cpu.total_percent).c_str());
+                 kKern, true, false,
+                 core::format::format_pct(snap->cpu.total_percent).c_str(),
+                 now_ms);
 
     // Per-core bars.
     if (!snap->cpu.per_core.empty()) {
@@ -425,7 +431,7 @@ void render_performance_tab() {
         core::format::format_bytes(snap->memory.used_bytes) + " / " +
         core::format::format_bytes(snap->memory.total_bytes);
     render_chart("mem", "Memory", g_mem, "RAM used", kMem, &g_swap, "Swap",
-                 kSwap, true, false, head.c_str());
+                 kSwap, true, false, head.c_str(), now_ms);
     ImGui::TextDisabled(
         "Committed %s of %s  |  Swap %s of %s",
         core::format::format_bytes(snap->memory.committed_bytes).c_str(),
@@ -437,7 +443,8 @@ void render_performance_tab() {
 
   if (o.show_disk) {
     render_chart("disk", "Disk", g_disk_r, "Read", kRead, &g_disk_w, "Write",
-                 kWrite, false, true, core::format::format_rate(disk_total, false).c_str());
+                 kWrite, false, true,
+                 core::format::format_rate(disk_total, false).c_str(), now_ms);
     ImGui::Separator();
   }
 
@@ -447,7 +454,7 @@ void render_performance_tab() {
         "  |  Recv " +
         core::format::format_rate(static_cast<double>(snap->net.bytes_recv_s), o.bits);
     render_chart("net", "Network", g_net_s, "Send", kSend, &g_net_r, "Recv",
-                 kRecv, false, true, head.c_str());
+                 kRecv, false, true, head.c_str(), now_ms);
   }
 
   ImGui::Spacing();

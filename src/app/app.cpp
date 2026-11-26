@@ -15,6 +15,7 @@
 #include "platform/tray.h"
 #include "rules/rules.h"
 #include "ui/processes_tab.h"
+#include "ui/performance_tab.h"
 #include "ui/rules_tab.h"
 #include "ui/scale.h"
 #include "ui/settings_dialog.h"
@@ -583,6 +584,10 @@ void App::render_frame() {
       rules::RuleEngine::instance().on_process_snapshot(procs);
     }
   }
+
+  // Chart history belongs to the program, not to whichever tab is on screen:
+  // leaving Performance must not stop the ten-minute window from rolling.
+  ui::performance_ingest();
 
   ImGui_ImplDX11_NewFrame();
   ImGui_ImplWin32_NewFrame();
