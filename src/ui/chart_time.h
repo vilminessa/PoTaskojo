@@ -34,6 +34,16 @@ inline constexpr long long history_cap(long long window_ms,
   return interval_ms > 0 ? 2 * window_ms / interval_ms : 0;
 }
 
+// X position of a sample, in seconds, relative to the newest one.
+//
+// Relative to the newest sample rather than to the wall clock: pinning the
+// right-hand edge to "now" while data only arrives once per interval leaves a
+// gap that grows until the next sample and then snaps shut, and it moves the
+// whole axis every frame even when nothing new has been measured.
+inline double seconds_from_newest(long long newest_ms, long long sample_ms) {
+  return -static_cast<double>(newest_ms - sample_ms) / 1000.0;
+}
+
 struct TimeTicks {
   std::vector<double> pos;        // axis positions, seconds relative to now
   std::vector<std::string> labels;

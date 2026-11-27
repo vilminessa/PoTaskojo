@@ -171,8 +171,7 @@ void smooth_inplace(std::vector<float>& v, float alpha) {
 void render_chart(const char* id, const char* title,
                   const Series& s1, const char* label1, const ImVec4& col1,
                   const Series* s2, const char* label2, const ImVec4& col2,
-                  bool percent, bool rate, const char* headline,
-                  long long now_ms) {
+                  bool percent, bool rate, const char* headline) {
   const int n = static_cast<int>(s1.v.size());
   if (n < 2) {
     ImGui::TextDisabled("%s: collecting...", title);
@@ -188,17 +187,20 @@ void render_chart(const char* id, const char* title,
     ImGui::Text("%s", headline);
   }
 
-  // X is the real age of each sample, so the axis stays honest if the
-  // collector drifts, pauses, or the machine wakes from sleep.
+  // The axis is anchored to the newest sample, not to the wall clock. Data
+  // arrives once per interval; anything else makes a gap open at the right
+  // edge until the next sample and then snap shut, and slides the whole axis
+  // every frame in between.
+  const long long ref_ms = s1.v.back().ms;
   const double span_sec =
-      static_cast<double>(now_ms - s1.v.front().ms) / 1000.0;
+      -chart_time::seconds_from_newest(ref_ms, s1.v.front().ms);
 
   // Data buffers (must outlive EndPlot).
   std::vector<float> xs(n), y1(n);
   std::vector<float> y2;
   for (int i = 0; i < n; ++i) {
     const Sample& s = s1.v[static_cast<size_t>(i)];
-    xs[i] = static_cast<float>(-(now_ms - s.ms)) / 1000.0f;
+    xs[i] = static_cast<float>(chart_time::seconds_from_newest(ref_ms, s.ms));
     y1[i] = static_cast<float>(s.v);
   }
   const bool has2 = s2 && static_cast<int>(s2->v.size()) == n;
@@ -328,15 +330,13 @@ void render_performance_tab() {
     return;
   }
 
-  // One clock for every chart in this frame, so they share the same x mapping.
-  const long long now_ms = static_cast<long long>(GetTickCount64());
   const double disk_total = static_cast<double>(snap->disk.read_bytes_s +
                                                 snap->disk.write_bytes_s);
-  // The status line reports the window in minutes and seconds; computed from
-  // real timestamps it finally means what it says.
+  // The window the status line reports: the span actually plotted, so it stops
+  // ticking between samples and matches what the axis shows.
   int span_s = 0;
-  if (!g_cpu.v.empty())
-    span_s = static_cast<int>((now_ms - g_cpu.v.front().ms) / 1000);
+  if (g_cpu.v.size() > 1)
+    span_s = static_cast<int>((g_cpu.v.back().ms - g_cpu.v.front().ms) / 1000);
 
   auto& o = opts();
 
@@ -405,8 +405,7 @@ void render_performance_tab() {
   if (o.show_cpu) {
     render_chart("cpu", "CPU", g_cpu, "Total", kCpu, &g_cpu_kern, "Kernel",
                  kKern, true, false,
-                 core::format::format_pct(snap->cpu.total_percent).c_str(),
-                 now_ms);
+                 core::format::format_pct(snap->cpu.total_percent).c_str());
 
     // Per-core bars.
     if (!snap->cpu.per_core.empty()) {
@@ -432,7 +431,7 @@ void render_performance_tab() {
         core::format::format_bytes(snap->memory.used_bytes) + " / " +
         core::format::format_bytes(snap->memory.total_bytes);
     render_chart("mem", "Memory", g_mem, "RAM used", kMem, &g_swap, "Swap",
-                 kSwap, true, false, head.c_str(), now_ms);
+                 kSwap, true, false, head.c_str());
     ImGui::TextDisabled(
         "Committed %s of %s  |  Swap %s of %s",
         core::format::format_bytes(snap->memory.committed_bytes).c_str(),
@@ -445,7 +444,7 @@ void render_performance_tab() {
   if (o.show_disk) {
     render_chart("disk", "Disk", g_disk_r, "Read", kRead, &g_disk_w, "Write",
                  kWrite, false, true,
-                 core::format::format_rate(disk_total, false).c_str(), now_ms);
+                 core::format::format_rate(disk_total, false).c_str());
     ImGui::Separator();
   }
 
@@ -455,7 +454,7 @@ void render_performance_tab() {
         "  |  Recv " +
         core::format::format_rate(static_cast<double>(snap->net.bytes_recv_s), o.bits);
     render_chart("net", "Network", g_net_s, "Send", kSend, &g_net_r, "Recv",
-                 kRecv, false, true, head.c_str(), now_ms);
+                 kRecv, false, true, head.c_str());
   }
 
   ImGui::Spacing();

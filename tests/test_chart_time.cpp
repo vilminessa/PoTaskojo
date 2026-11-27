@@ -16,6 +16,7 @@ using ui::chart_time::compute_time_ticks;
 using ui::chart_time::history_cap;
 using ui::chart_time::inside_window;
 using ui::chart_time::kWindowMs;
+using ui::chart_time::seconds_from_newest;
 
 TEST_CASE(chart_ticks_label_a_full_ten_minute_window) {
   // 599 seconds of history: the spacing that keeps six or fewer labels is
@@ -74,6 +75,21 @@ TEST_CASE(chart_window_is_measured_by_age_not_by_count) {
   CHECK(!inside_window(now, now - kWindowMs - 1));
   // A brand-new sample is obviously inside.
   CHECK(inside_window(now, now));
+}
+
+TEST_CASE(newest_sample_sits_exactly_on_the_right_edge) {
+  // The invariant the axis broke: it was anchored to the wall clock while data
+  // only arrives once per interval, so the newest sample sat up to one interval
+  // short of the right edge and the empty space grew until the next sample
+  // arrived and snapped it shut. On a chart that has just started, that space
+  // was half the width.
+  const long long newest = 9'000'000LL;
+  CHECK_EQ(seconds_from_newest(newest, newest), 0.0);
+  CHECK_EQ(seconds_from_newest(newest, newest - 250), -0.25);
+  CHECK_EQ(seconds_from_newest(newest, newest - 1000), -1.0);
+  // Older samples sit strictly further left, never somewhere else.
+  CHECK(seconds_from_newest(newest, newest - 5000) <
+        seconds_from_newest(newest, newest - 1000));
 }
 
 TEST_CASE(history_cap_always_outruns_the_window) {

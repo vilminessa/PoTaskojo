@@ -171,6 +171,21 @@ void PerfCollector::thread_main() {
   // Give PDH one extra interval so the first CPU% delta is meaningful.
   Sleep(interval_ms_);
 
+  // What a sample costs decides whether the planned interval is realistic: a
+  // collector that spends 90 ms of every 100 is not polling at 100 ms, it is
+  // saturating a core. The first sample is left out because it carries PDH's
+  // first expansion of the wildcard counters and is not representative.
+  constexpr uint32_t kProbeSkip = 1;
+  constexpr uint32_t kProbeSamples = 20;
+  constexpr uint64_t kCostMultiplier = 4;
+  uint64_t cost_total = 0;
+  uint64_t cost_max = 0;
+  uint64_t first_ms = 0;
+  uint64_t last_ms = 0;
+  uint32_t seen = 0;
+  uint32_t taken = 0;
+  bool probed = false;
+
   while (running_) {
     const auto t0 = GetTickCount64();
     auto snap = std::make_shared<PerfSnapshot>();
@@ -181,6 +196,45 @@ void PerfCollector::thread_main() {
       latest_ = std::move(snap);
     }
     const auto elapsed = GetTickCount64() - t0;
+
+    if (!probed) {
+      ++seen;
+      if (seen > kProbeSkip) {
+        if (first_ms == 0) first_ms = t0;
+        last_ms = t0;
+        cost_total += elapsed;
+        if (elapsed > cost_max) cost_max = elapsed;
+        ++taken;
+        if (taken >= kProbeSamples) {
+          probed = true;
+          const uint64_t mean = cost_total / kProbeSamples;
+          const uint64_t needed = kCostMultiplier * mean;
+          // The cadence actually achieved, from the timestamps rather than
+          // from the configured figure: this is the number that says whether
+          // the setting survived contact with the scheduler.
+          const uint64_t period =
+              (taken > 1 && last_ms > first_ms) ? (last_ms - first_ms) / (taken - 1)
+                                                : 0;
+          const std::string cadence =
+              "measured " + std::to_string(period) + " ms between samples";
+          if (needed > interval_ms_) {
+            const auto raised = static_cast<uint32_t>(((needed + 9) / 10) * 10);
+            core::log::warn(
+                "perf sample costs " + std::to_string(mean) + " ms on average (" +
+                std::to_string(cost_max) + " max); interval raised from " +
+                std::to_string(interval_ms_) + " to " +
+                std::to_string(raised) + " ms; " + cadence);
+            interval_ms_ = raised;
+          } else {
+            core::log::info(
+                "perf sample costs " + std::to_string(mean) + " ms on average (" +
+                std::to_string(cost_max) + " max); polling every " +
+                std::to_string(interval_ms_) + " ms; " + cadence);
+          }
+        }
+      }
+    }
+
     const auto sleep = elapsed >= interval_ms_ ? 1 : interval_ms_ - elapsed;
     if (!wait_.wait_for(static_cast<uint32_t>(sleep))) break;
   }

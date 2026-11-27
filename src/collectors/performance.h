@@ -49,10 +49,12 @@ struct PerfSnapshot {
   NetworkSample net;
 };
 
-// Polling interval. Four samples a second is what it takes for a spike of a
-// quarter second to land on the chart instead of being averaged out of it, and
-// one sample costs about 10 ms, so the interval has plenty of room.
-inline constexpr uint32_t kSampleIntervalMs = 250;
+// Upper bound on the polling interval, in milliseconds. The collector measures
+// what a sample actually costs early on and backs off from this figure if four
+// of them would not fit into it - see thread_main(). The history cap is derived
+// from this planned figure, which is safe in one direction only: too large a
+// cap costs memory, too small one would silently shorten the window.
+inline constexpr uint32_t kSampleIntervalMs = 100;
 
 class PerfCollector {
  public:
