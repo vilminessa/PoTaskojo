@@ -25,16 +25,17 @@ collectors::PerfCollector& perf() {
   static bool started = false;
   if (!started) {
     started = true;
-    c.start(1000);
+    c.start(collectors::kSampleIntervalMs);
   }
   return c;
 }
 
 // Memory safety valve only: the age window is what decides how much history is
-// kept, and it normally holds about six hundred samples. This bounds the
-// allocation if the sample interval is ever set well below the one second this
-// tab assumes.
-constexpr size_t kHistory = 1000;
+// kept. The cap is derived from the sampling interval so that raising the rate
+// cannot quietly shorten the window - a flat number would have cut ten minutes
+// down to four at 250 ms.
+constexpr size_t kHistory = static_cast<size_t>(chart_time::history_cap(
+    chart_time::kWindowMs, collectors::kSampleIntervalMs));
 
 struct Sample {
   long long ms;  // GetTickCount64 at the moment the sample was taken

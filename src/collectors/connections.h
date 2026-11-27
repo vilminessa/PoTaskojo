@@ -11,6 +11,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "collectors/poll_wait.h"
+
 namespace collectors {
 
 struct ConnectionRow {
@@ -47,6 +49,7 @@ class ConnectionCollector {
   std::thread thread_;
   std::atomic<bool> running_{false};
   uint32_t interval_ms_ = 2000;
+  PollWait wait_;
   mutable std::mutex mutex_;
   std::shared_ptr<const ConnectionSnapshot> latest_;
   std::unordered_map<uint32_t, std::wstring> name_cache_;

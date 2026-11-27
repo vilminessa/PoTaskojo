@@ -13,6 +13,7 @@
 #include "test_support.h"
 
 using ui::chart_time::compute_time_ticks;
+using ui::chart_time::history_cap;
 using ui::chart_time::inside_window;
 using ui::chart_time::kWindowMs;
 
@@ -73,4 +74,19 @@ TEST_CASE(chart_window_is_measured_by_age_not_by_count) {
   CHECK(!inside_window(now, now - kWindowMs - 1));
   // A brand-new sample is obviously inside.
   CHECK(inside_window(now, now));
+}
+
+TEST_CASE(history_cap_always_outruns_the_window) {
+  // The count may never be what trims the history: at every plausible
+  // interval the cap has to exceed the number of samples the window needs,
+  // or raising the sampling rate silently shortens the window.
+  for (long long interval : {1000LL, 500LL, 250LL, 100LL}) {
+    const long long needed = kWindowMs / interval;
+    const long long cap = history_cap(kWindowMs, interval);
+    CHECK(cap >= needed);
+    // ...but not unbounded: the spare half is the memory valve.
+    CHECK(cap <= 2 * needed);
+  }
+  // Degenerate interval must not divide by zero.
+  CHECK_EQ(history_cap(kWindowMs, 0), 0LL);
 }

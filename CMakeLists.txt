@@ -82,6 +82,7 @@ add_executable(potaskojo_tests
   tests/test_text.cpp
   tests/test_update.cpp
   tests/test_chart_time.cpp
+  tests/test_poll_wait.cpp
   src/core/format.cpp
   src/core/settings.cpp
   src/core/paths.cpp
@@ -89,6 +90,7 @@ add_executable(potaskojo_tests
   src/core/log.cpp
   src/ui/scale.cpp
   src/ui/chart_time.cpp
+  src/collectors/poll_wait.cpp
   src/rules/rule_store.cpp
   src/rules/watchdog_eval.cpp
   src/rules/action_exec.cpp

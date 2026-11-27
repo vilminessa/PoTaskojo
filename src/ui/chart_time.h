@@ -22,6 +22,18 @@ inline bool inside_window(long long now_ms, long long sample_ms) {
   return now_ms - sample_ms <= kWindowMs;
 }
 
+// How many samples the history may hold so that the age rule - not the count -
+// decides how much is kept. Twice what the window needs at this interval, with
+// the spare half as a memory valve.
+//
+// Derived rather than fixed because a flat number silently shortens the window
+// whenever the sampling rate goes up: at 250 ms a cap of 1000 would cut ten
+// minutes down to four.
+inline constexpr long long history_cap(long long window_ms,
+                                       long long interval_ms) {
+  return interval_ms > 0 ? 2 * window_ms / interval_ms : 0;
+}
+
 struct TimeTicks {
   std::vector<double> pos;        // axis positions, seconds relative to now
   std::vector<std::string> labels;

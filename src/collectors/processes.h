@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "collectors/poll_wait.h"
+
 namespace collectors {
 
 struct ProcessRow {
@@ -68,6 +70,7 @@ class ProcessCollector {
   std::thread thread_;
   std::atomic<bool> running_{false};
   uint32_t interval_ms_ = 1000;
+  PollWait wait_;
 
   mutable std::mutex mutex_;
   std::shared_ptr<const ProcessSnapshot> latest_;

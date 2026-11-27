@@ -56,11 +56,13 @@ ConnectionCollector::~ConnectionCollector() { stop(); }
 void ConnectionCollector::start(uint32_t interval_ms) {
   if (running_.exchange(true)) return;
   interval_ms_ = interval_ms ? interval_ms : 2000;
+  wait_.reset();
   thread_ = std::thread([this] { thread_main(); });
 }
 
 void ConnectionCollector::stop() {
   if (!running_.exchange(false)) return;
+  wait_.interrupt();
   if (thread_.joinable()) thread_.join();
 }
 
@@ -79,7 +81,7 @@ void ConnectionCollector::thread_main() {
       snap->seq = latest_ ? latest_->seq + 1 : 1;
       latest_ = std::move(snap);
     }
-    for (uint32_t s = 0; s < interval_ms_ && running_; s += 50) Sleep(50);
+    if (!wait_.wait_for(interval_ms_)) break;
   }
   core::log::info("connection collector stopped");
 }

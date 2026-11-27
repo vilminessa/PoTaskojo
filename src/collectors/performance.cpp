@@ -102,12 +102,15 @@ PerfCollector::~PerfCollector() { stop(); }
 
 void PerfCollector::start(uint32_t interval_ms) {
   if (running_.exchange(true)) return;
-  interval_ms_ = interval_ms ? interval_ms : 1000;
+  interval_ms_ = interval_ms ? interval_ms : kSampleIntervalMs;
+  wait_.reset();
   thread_ = std::thread([this] { thread_main(); });
 }
 
 void PerfCollector::stop() {
   if (!running_.exchange(false)) return;
+  // Without this the sleeping thread would run out its whole interval first.
+  wait_.interrupt();
   if (thread_.joinable()) thread_.join();
 }
 
@@ -166,7 +169,7 @@ void PerfCollector::thread_main() {
   pdh_ready_ = init_pdh();
 
   // Give PDH one extra interval so the first CPU% delta is meaningful.
-  Sleep(200);
+  Sleep(interval_ms_);
 
   while (running_) {
     const auto t0 = GetTickCount64();
@@ -179,7 +182,7 @@ void PerfCollector::thread_main() {
     }
     const auto elapsed = GetTickCount64() - t0;
     const auto sleep = elapsed >= interval_ms_ ? 1 : interval_ms_ - elapsed;
-    for (uint32_t s = 0; s < sleep && running_; s += 20) Sleep(20);
+    if (!wait_.wait_for(static_cast<uint32_t>(sleep))) break;
   }
   close_pdh();
   core::log::info("perf collector stopped");

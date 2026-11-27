@@ -9,6 +9,8 @@
 #include <thread>
 #include <vector>
 
+#include "collectors/poll_wait.h"
+
 namespace collectors {
 
 struct ServiceRow {
@@ -42,6 +44,7 @@ class ServiceCollector {
   std::atomic<bool> running_{false};
   std::atomic<bool> refresh_requested_{false};
   uint32_t interval_ms_ = 3000;
+  PollWait wait_;
   mutable std::mutex mutex_;
   std::shared_ptr<const ServiceSnapshot> latest_;
 };

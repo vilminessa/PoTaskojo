@@ -10,6 +10,8 @@
 #include <thread>
 #include <vector>
 
+#include "collectors/poll_wait.h"
+
 namespace collectors {
 
 struct CpuSample {
@@ -47,11 +49,16 @@ struct PerfSnapshot {
   NetworkSample net;
 };
 
+// Polling interval. Four samples a second is what it takes for a spike of a
+// quarter second to land on the chart instead of being averaged out of it, and
+// one sample costs about 10 ms, so the interval has plenty of room.
+inline constexpr uint32_t kSampleIntervalMs = 250;
+
 class PerfCollector {
  public:
   ~PerfCollector();
 
-  void start(uint32_t interval_ms = 1000);
+  void start(uint32_t interval_ms = kSampleIntervalMs);
   void stop();
   std::shared_ptr<const PerfSnapshot> latest() const;
 
@@ -63,7 +70,8 @@ class PerfCollector {
 
   std::thread thread_;
   std::atomic<bool> running_{false};
-  uint32_t interval_ms_ = 1000;
+  uint32_t interval_ms_ = kSampleIntervalMs;
+  PollWait wait_;
 
   mutable std::mutex mutex_;
   std::shared_ptr<const PerfSnapshot> latest_;

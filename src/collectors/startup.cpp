@@ -119,15 +119,21 @@ StartupCollector::~StartupCollector() { stop(); }
 void StartupCollector::start(uint32_t interval_ms) {
   if (running_.exchange(true)) return;
   interval_ms_ = interval_ms ? interval_ms : 10000;
+  wait_.reset();
   thread_ = std::thread([this] { thread_main(); });
 }
 
 void StartupCollector::stop() {
   if (!running_.exchange(false)) return;
+  wait_.interrupt();
   if (thread_.joinable()) thread_.join();
 }
 
-void StartupCollector::refresh_now() { refresh_requested_ = true; }
+void StartupCollector::refresh_now() {
+  refresh_requested_ = true;
+  // Without this the button would wait out the whole interval first.
+  wait_.interrupt();
+}
 
 std::shared_ptr<const StartupSnapshot> StartupCollector::latest() const {
   std::lock_guard lock(mutex_);
@@ -145,9 +151,11 @@ void StartupCollector::thread_main() {
       latest_ = std::move(snap);
     }
     refresh_requested_ = false;
-    for (uint32_t s = 0; s < interval_ms_ && running_; s += 100) {
-      Sleep(100);
-      if (refresh_requested_) break;
+    if (!wait_.wait_for(interval_ms_)) {
+      // See ServiceCollector: a refresh and a stop both wake this wait, and
+      // only the stop may end the loop.
+      if (!running_) break;
+      wait_.reset();
     }
   }
   core::log::info("startup collector stopped");

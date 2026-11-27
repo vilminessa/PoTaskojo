@@ -54,15 +54,21 @@ ServiceCollector::~ServiceCollector() { stop(); }
 void ServiceCollector::start(uint32_t interval_ms) {
   if (running_.exchange(true)) return;
   interval_ms_ = interval_ms ? interval_ms : 3000;
+  wait_.reset();
   thread_ = std::thread([this] { thread_main(); });
 }
 
 void ServiceCollector::stop() {
   if (!running_.exchange(false)) return;
+  wait_.interrupt();
   if (thread_.joinable()) thread_.join();
 }
 
-void ServiceCollector::refresh_now() { refresh_requested_ = true; }
+void ServiceCollector::refresh_now() {
+  refresh_requested_ = true;
+  // Without this the button would wait out the whole interval first.
+  wait_.interrupt();
+}
 
 std::shared_ptr<const ServiceSnapshot> ServiceCollector::latest() const {
   std::lock_guard lock(mutex_);
@@ -80,9 +86,12 @@ void ServiceCollector::thread_main() {
       latest_ = std::move(snap);
     }
     refresh_requested_ = false;
-    for (uint32_t s = 0; s < interval_ms_ && running_; s += 50) {
-      Sleep(50);
-      if (refresh_requested_) break;
+    if (!wait_.wait_for(interval_ms_)) {
+      // A refresh wakes the same wait a stop does. Stop has already cleared
+      // running_, so testing it first keeps the two apart; the latch is only
+      // cleared when polling is meant to continue.
+      if (!running_) break;
+      wait_.reset();
     }
   }
   core::log::info("service collector stopped");

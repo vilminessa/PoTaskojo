@@ -166,11 +166,13 @@ ProcessCollector::~ProcessCollector() { stop(); }
 void ProcessCollector::start(uint32_t interval_ms) {
   if (running_.exchange(true)) return;
   interval_ms_ = interval_ms ? interval_ms : 1000;
+  wait_.reset();
   thread_ = std::thread([this] { thread_main(); });
 }
 
 void ProcessCollector::stop() {
   if (!running_.exchange(false)) return;
+  wait_.interrupt();
   if (thread_.joinable()) thread_.join();
 }
 
@@ -210,7 +212,7 @@ void ProcessCollector::thread_main() {
 
     const auto elapsed = GetTickCount64() - t0;
     const auto sleep = elapsed >= interval_ms_ ? 1 : interval_ms_ - elapsed;
-    for (uint32_t slept = 0; slept < sleep && running_; slept += 20) Sleep(20);
+    if (!wait_.wait_for(static_cast<uint32_t>(sleep))) break;
   }
   core::log::info("process collector stopped");
 }

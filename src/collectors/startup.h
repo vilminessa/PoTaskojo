@@ -9,6 +9,8 @@
 #include <thread>
 #include <vector>
 
+#include "collectors/poll_wait.h"
+
 namespace collectors {
 
 struct StartupRow {
@@ -46,6 +48,7 @@ class StartupCollector {
   std::atomic<bool> running_{false};
   std::atomic<bool> refresh_requested_{false};
   uint32_t interval_ms_ = 10000;
+  PollWait wait_;
   mutable std::mutex mutex_;
   std::shared_ptr<const StartupSnapshot> latest_;
 };
