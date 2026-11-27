@@ -34,15 +34,34 @@ inline constexpr long long history_cap(long long window_ms,
   return interval_ms > 0 ? 2 * window_ms / interval_ms : 0;
 }
 
-// X position of a sample, in seconds, relative to the newest one.
+// X position of a sample, in seconds, relative to |instant_ms|.
 //
-// Relative to the newest sample rather than to the wall clock: pinning the
-// right-hand edge to "now" while data only arrives once per interval leaves a
-// gap that grows until the next sample and then snaps shut, and it moves the
-// whole axis every frame even when nothing new has been measured.
-inline double seconds_from_newest(long long newest_ms, long long sample_ms) {
-  return -static_cast<double>(newest_ms - sample_ms) / 1000.0;
+// Relative to a clock instant rather than to the newest sample: a data-anchored
+// axis only moves when a sample arrives, which makes the whole plot jump sideways
+// once per interval instead of gliding. The clock keeps the motion continuous;
+// the line still reaches the right-hand edge because the caller appends a point
+// that holds the last measured value out to the instant.
+inline double seconds_before(long long instant_ms, long long sample_ms) {
+  return -static_cast<double>(instant_ms - sample_ms) / 1000.0;
 }
+
+// Smallest ladder value that is at least |raw|, on a ladder of 1, 1.2, 1.5, 2,
+// 2.5, 3, 4, 5, 6, 8, 10 scaled by a power of ten.
+//
+// The Y ceiling used to be recomputed from the window's maximum every frame, so
+// every new peak rescaled the whole plot by a few percent. Quantising it means
+// the ceiling sits still until the data crosses a rung, and when it does move it
+// moves to a value the axis can label cleanly.
+double nice_ceiling(double raw);
+
+// X positions for one chart: one entry per sample, plus a final point at zero.
+//
+// The extra point holds the last measured value out to |instant_ms|. A sampled
+// signal holds between samples, and without that tail the line would stop short
+// of the right-hand edge while the axis follows the clock - which is the empty
+// space that used to appear until the next reading arrived.
+std::vector<float> time_axis(long long instant_ms, const long long* sample_ms,
+                             size_t count);
 
 struct TimeTicks {
   std::vector<double> pos;        // axis positions, seconds relative to now

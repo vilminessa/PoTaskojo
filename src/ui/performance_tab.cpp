@@ -70,7 +70,8 @@ struct ChartOpts {
   bool show_disk = true;
   bool show_net = true;
   bool auto_scale = true;  // pick magnitude (KB/s, MB/s, ...) from the data
-  bool smooth = false;     // EMA smoothing
+  bool smooth = true;      // EMA smoothing - on by default, the raw signal at
+                           // 100 ms is visibly twitchy without it
   bool bits = false;       // network unit: bits/s instead of bytes/s
 };
 
@@ -82,7 +83,7 @@ ChartOpts& opts() {
     c.show_disk = core::settings::get_bool(L"Charts", L"ShowDiskChart", true);
     c.show_net = core::settings::get_bool(L"Charts", L"ShowNetworkChart", true);
     c.auto_scale = core::settings::get_bool(L"Charts", L"ChartAutoScale", true);
-    c.smooth = core::settings::get_bool(L"Charts", L"SmoothCharts", false);
+    c.smooth = core::settings::get_bool(L"Charts", L"SmoothCharts", true);
     c.bits = core::settings::get_bool(L"Charts", L"NetworkBitsPerSecond", false);
     return c;
   }();
@@ -171,7 +172,8 @@ void smooth_inplace(std::vector<float>& v, float alpha) {
 void render_chart(const char* id, const char* title,
                   const Series& s1, const char* label1, const ImVec4& col1,
                   const Series* s2, const char* label2, const ImVec4& col2,
-                  bool percent, bool rate, const char* headline) {
+                  bool percent, bool rate, const char* headline,
+                  long long now_ms) {
   const int n = static_cast<int>(s1.v.size());
   if (n < 2) {
     ImGui::TextDisabled("%s: collecting...", title);
@@ -187,22 +189,22 @@ void render_chart(const char* id, const char* title,
     ImGui::Text("%s", headline);
   }
 
-  // The axis is anchored to the newest sample, not to the wall clock. Data
-  // arrives once per interval; anything else makes a gap open at the right
-  // edge until the next sample and then snap shut, and slides the whole axis
-  // every frame in between.
-  const long long ref_ms = s1.v.back().ms;
-  const double span_sec =
-      -chart_time::seconds_from_newest(ref_ms, s1.v.front().ms);
+  // The axis follows the clock so the plot glides instead of jumping sideways
+  // once per interval. Data only arrives at those intervals, which is why the
+  // line is extended to the right-hand edge holding its last value: a sampled
+  // signal holds between samples, and without that the edge would show empty
+  // space until the next measurement.
+  const double span_sec = -chart_time::seconds_before(now_ms, s1.v.front().ms);
+
+  std::vector<long long> stamps(static_cast<size_t>(n));
+  for (int i = 0; i < n; ++i)
+    stamps[static_cast<size_t>(i)] = s1.v[static_cast<size_t>(i)].ms;
+  std::vector<float> xs = chart_time::time_axis(now_ms, stamps.data(), stamps.size());
 
   // Data buffers (must outlive EndPlot).
-  std::vector<float> xs(n), y1(n);
+  std::vector<float> y1(n);
   std::vector<float> y2;
-  for (int i = 0; i < n; ++i) {
-    const Sample& s = s1.v[static_cast<size_t>(i)];
-    xs[i] = static_cast<float>(chart_time::seconds_from_newest(ref_ms, s.ms));
-    y1[i] = static_cast<float>(s.v);
-  }
+  for (int i = 0; i < n; ++i) y1[static_cast<size_t>(i)] = static_cast<float>(s1.v[static_cast<size_t>(i)].v);
   const bool has2 = s2 && static_cast<int>(s2->v.size()) == n;
   if (has2) {
     y2.resize(static_cast<size_t>(n));
@@ -211,6 +213,8 @@ void render_chart(const char* id, const char* title,
           static_cast<float>(s2->v[static_cast<size_t>(i)].v);
   }
 
+  // Smoothing runs over the measurements only; the held tail is appended after
+  // so it cannot drag the last real point towards a value that was never read.
   if (opts().smooth) {
     smooth_inplace(y1, 0.3f);
     if (has2) smooth_inplace(y2, 0.3f);
@@ -224,10 +228,18 @@ void render_chart(const char* id, const char* title,
     for (float x : y1) ymax = std::max(ymax, static_cast<double>(x));
     if (has2)
       for (float x : y2) ymax = std::max(ymax, static_cast<double>(x));
-    ymax *= 1.08;
+    // Quantised: a new peak no longer rescales the plot by a few percent, the
+    // ceiling waits for the data to cross a rung.
+    ymax = chart_time::nice_ceiling(ymax * 1.08);
   }
   RateAxis rate_axis{rate ? pick_div(ymax, opts().bits, opts().auto_scale) : 1.0,
                      opts().bits};
+
+  // The tail itself comes from time_axis; only the values need extending, and
+  // they must not be smoothed into it - smoothing already ran above.
+  y1.push_back(y1.back());
+  if (has2) y2.push_back(y2.back());
+  const int plotted = static_cast<int>(xs.size());
 
   // Time ticks (labels must outlive EndPlot).
   const chart_time::TimeTicks ticks =
@@ -287,14 +299,14 @@ void render_chart(const char* id, const char* title,
     spec1.FillAlpha = 0.25f;
     spec1.LineWeight = 1.5f;
     spec1.Flags = ImPlotLineFlags_Shaded;
-    ImPlot::PlotLine(label1, xs.data(), y1.data(), n, spec1);
+    ImPlot::PlotLine(label1, xs.data(), y1.data(), plotted, spec1);
 
     if (has2) {
       ImPlotSpec spec2;
       spec2.LineColor = col2;
       spec2.FillAlpha = 1.0f;
       spec2.LineWeight = 1.2f;
-      ImPlot::PlotLine(label2, xs.data(), y2.data(), n, spec2);
+      ImPlot::PlotLine(label2, xs.data(), y2.data(), plotted, spec2);
     }
     ImPlot::EndPlot();
   }
@@ -330,13 +342,16 @@ void render_performance_tab() {
     return;
   }
 
+  // One clock for every chart in this frame: the axis follows it, so all four
+  // scroll together at the same rate instead of each picking its own instant.
+  const long long now_ms = static_cast<long long>(GetTickCount64());
   const double disk_total = static_cast<double>(snap->disk.read_bytes_s +
                                                 snap->disk.write_bytes_s);
-  // The window the status line reports: the span actually plotted, so it stops
-  // ticking between samples and matches what the axis shows.
+  // The window the status line reports: what the axis spans, from the oldest
+  // sample to the present.
   int span_s = 0;
-  if (g_cpu.v.size() > 1)
-    span_s = static_cast<int>((g_cpu.v.back().ms - g_cpu.v.front().ms) / 1000);
+  if (!g_cpu.v.empty())
+    span_s = static_cast<int>((now_ms - g_cpu.v.front().ms) / 1000);
 
   auto& o = opts();
 
@@ -405,7 +420,8 @@ void render_performance_tab() {
   if (o.show_cpu) {
     render_chart("cpu", "CPU", g_cpu, "Total", kCpu, &g_cpu_kern, "Kernel",
                  kKern, true, false,
-                 core::format::format_pct(snap->cpu.total_percent).c_str());
+                 core::format::format_pct(snap->cpu.total_percent).c_str(),
+                 now_ms);
 
     // Per-core bars.
     if (!snap->cpu.per_core.empty()) {
@@ -431,7 +447,7 @@ void render_performance_tab() {
         core::format::format_bytes(snap->memory.used_bytes) + " / " +
         core::format::format_bytes(snap->memory.total_bytes);
     render_chart("mem", "Memory", g_mem, "RAM used", kMem, &g_swap, "Swap",
-                 kSwap, true, false, head.c_str());
+                 kSwap, true, false, head.c_str(), now_ms);
     ImGui::TextDisabled(
         "Committed %s of %s  |  Swap %s of %s",
         core::format::format_bytes(snap->memory.committed_bytes).c_str(),
@@ -444,7 +460,7 @@ void render_performance_tab() {
   if (o.show_disk) {
     render_chart("disk", "Disk", g_disk_r, "Read", kRead, &g_disk_w, "Write",
                  kWrite, false, true,
-                 core::format::format_rate(disk_total, false).c_str());
+                 core::format::format_rate(disk_total, false).c_str(), now_ms);
     ImGui::Separator();
   }
 
@@ -454,7 +470,7 @@ void render_performance_tab() {
         "  |  Recv " +
         core::format::format_rate(static_cast<double>(snap->net.bytes_recv_s), o.bits);
     render_chart("net", "Network", g_net_s, "Send", kSend, &g_net_r, "Recv",
-                 kRecv, false, true, head.c_str());
+                 kRecv, false, true, head.c_str(), now_ms);
   }
 
   ImGui::Spacing();

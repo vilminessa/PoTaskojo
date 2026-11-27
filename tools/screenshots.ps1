@@ -32,6 +32,7 @@ using System.Runtime.InteropServices;
 public class Shot32 {
   [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr hdc, uint flags);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
   public struct RECT { public int Left, Top; public int Right, Bottom; }
 }
 "@
@@ -58,11 +59,37 @@ function Grab([string]$path, [string]$argStr, [int]$scale, [int]$tab, [bool]$lig
   if ($h) {
     $r = New-Object Shot32+RECT
     [Shot32]::GetWindowRect($h, [ref]$r) | Out-Null
-    $bmp = New-Object System.Drawing.Bitmap(($r.Right - $r.Left), ($r.Bottom - $r.Top))
+    $w = $r.Right - $r.Left
+    $ht = $r.Bottom - $r.Top
+
+    # PrintWindow returns a black bitmap for this renderer, so the window is
+    # lifted above everything and the screen region is copied instead. Raising
+    # it is what makes the copy ours rather than whatever happens to overlap.
+    [Shot32]::SetWindowPos([IntPtr]$h, [IntPtr](-1), 0, 0, 0, 0, 0x0043) | Out-Null
+    Start-Sleep -Milliseconds 400
+
+    $bmp = New-Object System.Drawing.Bitmap($w, $ht)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
-    $hdc = $g.GetHdc()
-    [Shot32]::PrintWindow($h, $hdc, 2) | Out-Null
-    $g.ReleaseHdc($hdc); $g.Dispose()
+    $g.CopyFromScreen($r.Left, $r.Top, 0, 0, (New-Object System.Drawing.Size($w, $ht)))
+    $g.Dispose()
+
+    [Shot32]::SetWindowPos([IntPtr]$h, [IntPtr](-2), 0, 0, 0, 0, 0x0043) | Out-Null
+
+    # A blank capture must fail loudly: writing one would silently replace a
+    # good screenshot in the repository with a black rectangle.
+    $distinct = @{}
+    for ($y = 0; $y -lt $ht; $y += 8) {
+      for ($x = 0; $x -lt $w; $x += 8) {
+        $c = $bmp.GetPixel($x, $y)
+        $distinct["{0:X2}{1:X2}{2:X2}" -f $c.R, $c.G, $c.B] = 1
+      }
+    }
+    if ($distinct.Count -lt 12) {
+      $bmp.Dispose()
+      Stop-Process -Id $p.Id -Force -EA SilentlyContinue
+      throw "capture of $path has only $($distinct.Count) distinct colours - it looks blank"
+    }
+
     $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
     $bmp.Dispose()
   }
